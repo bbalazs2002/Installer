@@ -263,8 +263,7 @@ def parse_install_info(raw: Any, path: Path) -> InstallInfo:
         if not isinstance(raw_db, dict):
             raise StateError(f"A(z) {path} database mezője nem objektum.")
         fields = {
-            key: _str(raw_db, key, path)
-            for key in ("container", "network", "host", "name", "user")
+            key: _str(raw_db, key, path) for key in ("container", "network", "host", "name", "user")
         }
         admin = _str(raw_db, "adminUser", path, optional=True) or "postgres"
         assert all(fields.values())
@@ -321,3 +320,25 @@ def is_effectively_empty(target: Path) -> bool:
             return next(entries, None) is None
     except FileNotFoundError:
         return True
+
+
+@dataclass(frozen=True)
+class TargetState:
+    """What the target directory looks like right now (input of the planner)."""
+
+    exists: bool
+    empty: bool
+    install_info: InstallInfo | None = None
+    # Set when ``.install.json`` exists but cannot be understood; the planner then blocks.
+    unreadable_reason: str | None = None
+
+
+def inspect_target(target: Path) -> TargetState:
+    """Look at ``target`` (read-only) and describe it."""
+    exists = target.is_dir()
+    empty = is_effectively_empty(target)
+    try:
+        info = load_install_info(target)
+    except StateError as exc:
+        return TargetState(exists, empty, None, str(exc))
+    return TargetState(exists, empty, info)

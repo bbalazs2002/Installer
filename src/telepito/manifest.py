@@ -247,9 +247,7 @@ def _parse_database(reader: _Reader, raw: Any, app_name: str) -> DatabaseSpec | 
         return None
     engine = reader.string(data.get("engine", "postgres"), "database.engine")
     if engine != "postgres":
-        raise ManifestError(
-            f"Nem támogatott adatbázis-motor: {engine!r} (egyelőre csak postgres)."
-        )
+        raise ManifestError(f"Nem támogatott adatbázis-motor: {engine!r} (egyelőre csak postgres).")
     url_env = reader.string(
         reader.required(data, "urlEnv", "database"), "database.urlEnv", allow_empty=False
     )
@@ -286,9 +284,7 @@ def parse_manifest(data: Any) -> Manifest:
     reader = _Reader(warnings)
     root = reader.obj(data, "deploy.json")
 
-    version = reader.integer(
-        reader.required(root, "schemaVersion", ""), "schemaVersion", minimum=1
-    )
+    version = reader.integer(reader.required(root, "schemaVersion", ""), "schemaVersion", minimum=1)
     if version > SUPPORTED_SCHEMA_VERSION:
         raise ManifestError(
             f"A deploy.json schemaVersion értéke ({version}) újabb, mint amit ez a telepítő "

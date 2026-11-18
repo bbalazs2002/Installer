@@ -66,9 +66,7 @@ class Version:
     def _key(self) -> tuple[object, ...]:
         # A version without a prerelease is greater than one with it (flag 1 vs 0).
         # Identifiers: numeric ones sort before alphanumeric and compare as integers.
-        pre = tuple(
-            (0, int(i), "") if _NUMERIC_RE.match(i) else (1, 0, i) for i in self.prerelease
-        )
+        pre = tuple((0, int(i), "") if _NUMERIC_RE.match(i) else (1, 0, i) for i in self.prerelease)
         return (self.major, self.minor, self.patch, 0 if self.prerelease else 1, pre)
 
     def __eq__(self, other: object) -> bool:
