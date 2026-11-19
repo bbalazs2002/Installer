@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from telepito.github import (
+from installer.github import (
     Asset,
     GitHubAccessDenied,
     GitHubAuthError,
@@ -13,7 +13,7 @@ from telepito.github import (
     GitHubUnavailable,
     TokenStatus,
 )
-from telepito.github_http import (
+from installer.github_http import (
     HttpGitHub,
     parse_token_expiry,
     token_expiry_warning,

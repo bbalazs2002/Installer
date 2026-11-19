@@ -4,12 +4,12 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from telepito.logging_ import Redactor
-from telepito.manifest import Manifest, parse_manifest
-from telepito.ui.base import UiBack
-from telepito.ui.scripted import ScriptedUi
-from telepito.vault import Vault, VaultAuthError
-from telepito.wizard import InteractiveEnvConfigurator, open_vault_interactive
+from installer.logging_ import Redactor
+from installer.manifest import Manifest, parse_manifest
+from installer.ui.base import UiBack
+from installer.ui.scripted import ScriptedUi
+from installer.vault import Vault, VaultAuthError
+from installer.wizard import InteractiveEnvConfigurator, open_vault_interactive
 
 PASSWORD = "a long master password"
 

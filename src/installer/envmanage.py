@@ -1,7 +1,7 @@
 """Viewing, editing and rotating the settings of an installed application (menu 3).
 
 Secrets are never shown: every value that is secret, unknown to the manifest or part of the
-database URL is displayed as stars. The interactive parts take the :class:`~telepito.ui.base.Ui`
+database URL is displayed as stars. The interactive parts take the :class:`~installer.ui.base.Ui`
 and reuse the wizard's secret prompts so rotation behaves exactly like first-time setup.
 """
 

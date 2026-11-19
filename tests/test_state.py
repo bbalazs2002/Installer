@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from telepito.fsutil import atomic_write_text
-from telepito.state import (
+from installer.fsutil import atomic_write_text
+from installer.state import (
     DatabaseInfo,
     InstallInfo,
     InstallRecord,

@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from telepito.docker import ContainerInfo, Docker, DockerError, DockerInfo, ExecResult
+from installer.docker import ContainerInfo, Docker, DockerError, DockerInfo, ExecResult
 
 
 @dataclass(frozen=True)

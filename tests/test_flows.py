@@ -2,12 +2,12 @@ import os
 import shutil
 import unittest
 
-from telepito.app import run_action, run_menu
-from telepito.errors import TelepitoError
-from telepito.flows_db import database_menu
-from telepito.flows_env import env_screen, rotate_screen, vault_menu
-from telepito.flows_install import OTHER_REPO, TOGGLE_PRERELEASES, install_flow
-from telepito.flows_misc import (
+from installer.app import run_action, run_menu
+from installer.errors import TelepitoError
+from installer.flows_db import database_menu
+from installer.flows_env import env_screen, rotate_screen, vault_menu
+from installer.flows_install import OTHER_REPO, TOGGLE_PRERELEASES, install_flow
+from installer.flows_misc import (
     logs_screen,
     pending_updates,
     rollback_screen,
@@ -15,9 +15,9 @@ from telepito.flows_misc import (
     status_screen,
     updates_screen,
 )
-from telepito.state import KnownRepo, load_install_info, load_installs, load_repos, save_repos
-from telepito.ui.base import UiBack
-from telepito.vault import Vault
+from installer.state import KnownRepo, load_install_info, load_installs, load_repos, save_repos
+from installer.ui.base import UiBack
+from installer.vault import Vault
 
 from .appsupport import REPO, AppTestCase, D
 
@@ -97,7 +97,7 @@ class InstallFlowTests(AppTestCase):
         self.assertEqual(self.docker.names().count("compose_up"), 0)
 
     def test_declining_the_final_confirmation_aborts(self) -> None:
-        from telepito.errors import UserAbort
+        from installer.errors import UserAbort
 
         self.publish("0.1.0")
         self.ui.push(*self.answers_to_release(), str(self.target), D, "run", False)
@@ -269,7 +269,7 @@ class EnvFlowTests(AppTestCase):
         )
 
     def test_rotation_can_be_declined(self) -> None:
-        from telepito.errors import UserAbort
+        from installer.errors import UserAbort
 
         old = self.env()["APIKEY_MASTER_SECRET"]
         self.ui.push("APIKEY_MASTER_SECRET", False)

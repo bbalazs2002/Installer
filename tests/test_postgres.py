@@ -6,12 +6,12 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from telepito.docker import ContainerInfo, DockerError, ExecResult
-from telepito.envfile import read_env
-from telepito.errors import UserAbort
-from telepito.logging_ import Logger
-from telepito.manifest import Manifest, parse_manifest
-from telepito.postgres import (
+from installer.docker import ContainerInfo, DockerError, ExecResult
+from installer.envfile import read_env
+from installer.errors import UserAbort
+from installer.logging_ import Logger
+from installer.manifest import Manifest, parse_manifest
+from installer.postgres import (
     PostgresError,
     PostgresOps,
     PsqlClient,
@@ -26,9 +26,9 @@ from telepito.postgres import (
     scram_sha256_verifier,
     validate_password,
 )
-from telepito.state import DatabaseInfo
-from telepito.ui.base import UiBack
-from telepito.ui.scripted import ScriptedUi
+from installer.state import DatabaseInfo
+from installer.ui.base import UiBack
+from installer.ui.scripted import ScriptedUi
 
 from .fake_docker import ExecRecord, FakeDocker
 from .test_wizard import MemoryVault

@@ -3,7 +3,7 @@ import json
 import unittest
 from typing import Any
 
-from telepito.manifest import ManifestError, load_manifest, parse_manifest
+from installer.manifest import ManifestError, load_manifest, parse_manifest
 
 # The Investment example from the specification (chapter 2).
 EXAMPLE: dict[str, Any] = {

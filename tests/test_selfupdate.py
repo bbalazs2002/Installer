@@ -9,18 +9,18 @@ import unittest
 import zipapp
 from pathlib import Path
 
-from telepito import __version__
-from telepito.app import run_menu
-from telepito.flows_misc import selfupdate_screen
-from telepito.logging_ import Logger
-from telepito.selfupdate import (
+from installer import __version__
+from installer.app import run_menu
+from installer.flows_misc import selfupdate_screen
+from installer.logging_ import Logger
+from installer.selfupdate import (
     SELF_REPO,
     SelfUpdateError,
     apply_update,
     find_update,
     running_pyz,
 )
-from telepito.ui.base import UiBack
+from installer.ui.base import UiBack
 
 from .appsupport import AppTestCase
 from .fake_release import MemoryGitHub
@@ -215,14 +215,14 @@ class BuildTests(unittest.TestCase):
             with zipfile.ZipFile(out) as archive:
                 names = archive.namelist()
             self.assertIn("__main__.py", names)
-            self.assertIn("telepito/cli.py", names)
+            self.assertIn("installer/cli.py", names)
             self.assertFalse([n for n in names if "__pycache__" in n or n.startswith("tests")])
             self.assertEqual(out.read_bytes()[:21], b"#!/usr/bin/env python")
 
     def test_the_package_has_no_third_party_imports(self) -> None:
         import ast
 
-        root = Path(__file__).resolve().parent.parent / "src" / "telepito"
+        root = Path(__file__).resolve().parent.parent / "src" / "installer"
         allowed = set(sys.stdlib_module_names)
         for path in root.rglob("*.py"):
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -233,7 +233,7 @@ class BuildTests(unittest.TestCase):
                     names = [node.module.split(".")[0]]
                 for name in names:
                     with self.subTest(file=path.name, module=name):
-                        self.assertIn(name, allowed | {"telepito"})
+                        self.assertIn(name, allowed | {"installer"})
 
 
 class SelfUpdateFlowTests(AppTestCase):

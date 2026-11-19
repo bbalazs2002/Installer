@@ -1,8 +1,8 @@
 import unittest
 from typing import Any
 
-from telepito.manifest import Manifest, parse_manifest
-from telepito.plan import (
+from installer.manifest import Manifest, parse_manifest
+from installer.plan import (
     DOWNGRADE_PHRASE,
     BackupRef,
     ConfirmKind,
@@ -12,8 +12,8 @@ from telepito.plan import (
     build_plan,
     format_plan,
 )
-from telepito.state import InstallInfo, InstallRecord, TargetState
-from telepito.versions import Version
+from installer.state import InstallInfo, InstallRecord, TargetState
+from installer.versions import Version
 
 REPO = "o/investment"
 TARGET = "/var/www/investment"

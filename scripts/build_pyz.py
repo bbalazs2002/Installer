@@ -3,7 +3,7 @@
 
 Usage: ``python scripts/build_pyz.py [output]`` (default ``dist/telepito.pyz``).
 
-The archive holds only the ``telepito`` package (no tests, no caches) and a ``__main__.py``
+The archive holds only the ``installer`` package (no tests, no caches) and a ``__main__.py``
 that passes ``main()``'s return value to ``sys.exit`` (``zipapp``'s own ``-m`` template would
 drop the exit code). The shebang is ``/usr/bin/env python3``; the file is made executable.
 """
@@ -17,8 +17,8 @@ import zipapp
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGE = ROOT / "src" / "telepito"
-MAIN = "import sys\n\nfrom telepito.cli import main\n\nsys.exit(main())\n"
+PACKAGE = ROOT / "src" / "installer"
+MAIN = "import sys\n\nfrom installer.cli import main\n\nsys.exit(main())\n"
 SHEBANG = "/usr/bin/env python3"
 
 
@@ -30,7 +30,7 @@ def build(output: Path) -> Path:
         staging = Path(tmp) / "app"
         shutil.copytree(
             PACKAGE,
-            staging / "telepito",
+            staging / "installer",
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
         )
         (staging / "__main__.py").write_text(MAIN, encoding="utf-8")

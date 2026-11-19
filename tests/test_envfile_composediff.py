@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from telepito.composediff import FLAG, has_build_key, review_compose
-from telepito.envfile import (
+from installer.composediff import FLAG, has_build_key, review_compose
+from installer.envfile import (
     EnvFileError,
     generate_secret,
     parse_env,

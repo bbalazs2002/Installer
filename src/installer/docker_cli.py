@@ -1,4 +1,4 @@
-"""The real :class:`~telepito.docker.Docker`, driving the ``docker`` command line.
+"""The real :class:`~installer.docker.Docker`, driving the ``docker`` command line.
 
 Rules (specification 9): list arguments only (``shell=False``), a timeout on every call,
 secrets only through stdin or files (never arguments or environment), and all output that

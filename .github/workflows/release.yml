@@ -30,9 +30,9 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          version=$(PYTHONPATH=src python -c "import telepito; print(telepito.__version__)")
+          version=$(PYTHONPATH=src python -c "import installer; print(installer.__version__)")
           if [ "v$version" != "$TAG" ]; then
-            echo "Tag $TAG does not match telepito.__version__ ($version)." >&2
+            echo "Tag $TAG does not match installer.__version__ ($version)." >&2
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"

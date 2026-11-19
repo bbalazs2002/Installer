@@ -5,12 +5,12 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from telepito.docker import DockerError
-from telepito.envconfig import DefaultEnvConfigurator
-from telepito.envfile import read_env
-from telepito.errors import TelepitoError, UserAbort
-from telepito.health import HealthResponse
-from telepito.installer import (
+from installer.docker import DockerError
+from installer.envconfig import DefaultEnvConfigurator
+from installer.envfile import read_env
+from installer.errors import TelepitoError, UserAbort
+from installer.health import HealthResponse
+from installer.installer import (
     DatabaseOps,
     DatabaseSetup,
     Deps,
@@ -22,18 +22,18 @@ from telepito.installer import (
     parse_migrations,
     parse_sums,
 )
-from telepito.logging_ import Logger
-from telepito.manifest import Manifest
-from telepito.plan import PlanKind, PlanRequest, build_plan
-from telepito.state import (
+from installer.logging_ import Logger
+from installer.manifest import Manifest
+from installer.plan import PlanKind, PlanRequest, build_plan
+from installer.state import (
     DatabaseInfo,
     inspect_target,
     load_install_info,
     load_installs,
 )
-from telepito.ui.base import UiBack
-from telepito.ui.scripted import ScriptedUi
-from telepito.versions import Version
+from installer.ui.base import UiBack
+from installer.ui.scripted import ScriptedUi
+from installer.versions import Version
 
 from .fake_docker import FakeDocker
 from .fake_release import ReleaseSpec
@@ -568,7 +568,7 @@ class FailureTests(InstallerTestCase):
         self.assertEqual(self.installer.install(job).version, "0.1.0")
 
     def test_concurrent_run_is_refused(self) -> None:
-        from telepito.lock import FileLock, LockBusy
+        from installer.lock import FileLock, LockBusy
 
         _, release = self.publish("0.1.0")
         job = self.make_job(release)
@@ -623,7 +623,7 @@ class RollbackToTests(InstallerTestCase):
         assert info is not None
         from dataclasses import replace
 
-        from telepito.state import save_install_info
+        from installer.state import save_install_info
 
         save_install_info(self.target, replace(info, migrations=("m1", "m_extra")))
         with self.assertRaises(TelepitoError) as ctx:

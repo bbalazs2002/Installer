@@ -3,9 +3,9 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from telepito.fsutil import atomic_symlink
-from telepito.lock import FileLock, LockBusy
-from telepito.logging_ import Logger, Redactor
+from installer.fsutil import atomic_symlink
+from installer.lock import FileLock, LockBusy
+from installer.logging_ import Logger, Redactor
 
 
 class RedactorTests(unittest.TestCase):

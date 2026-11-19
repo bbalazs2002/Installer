@@ -42,7 +42,7 @@ def open_vault_interactive(
 ) -> Vault | None:
     """Unlock the vault (or create it on first use). ``None`` if the user declines to create it.
 
-    Esc raises :class:`~telepito.ui.base.UiBack` like everywhere else.
+    Esc raises :class:`~installer.ui.base.UiBack` like everywhere else.
     """
     if Vault.exists(path):
 

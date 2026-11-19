@@ -1,6 +1,6 @@
 import unittest
 
-from telepito.versions import Version, VersionError
+from installer.versions import Version, VersionError
 
 
 class ParseTests(unittest.TestCase):

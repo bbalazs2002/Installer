@@ -5,10 +5,10 @@ import unittest
 from typing import Any
 from unittest import mock
 
-from telepito import __version__
-from telepito.cli import main
-from telepito.state import load_install_info
-from telepito.ui.scripted import ScriptedUi
+from installer import __version__
+from installer.cli import main
+from installer.state import load_install_info
+from installer.ui.scripted import ScriptedUi
 
 from .appsupport import REPO, AppTestCase
 
@@ -17,7 +17,7 @@ class CliTestCase(AppTestCase):
     def setUp(self) -> None:
         super().setUp()
         # The installer refuses to run as root; tests may run as root (e.g. in a container).
-        patcher = mock.patch("telepito.cli.os.geteuid", return_value=1000, create=True)
+        patcher = mock.patch("installer.cli.os.geteuid", return_value=1000, create=True)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -44,7 +44,7 @@ class BasicTests(CliTestCase):
         self.assertIn(__version__, out.getvalue())
 
     def test_running_as_root_is_refused(self) -> None:
-        with mock.patch("telepito.cli.os.geteuid", return_value=0, create=True):
+        with mock.patch("installer.cli.os.geteuid", return_value=0, create=True):
             code, _, err = self.run_cli("status")
         self.assertEqual(code, 3)
         self.assertIn("root", err)
@@ -67,7 +67,7 @@ class BasicTests(CliTestCase):
         self.assertIn("sudo mkdir -p", err)
 
     def test_escape_in_the_main_menu_is_a_clean_exit(self) -> None:
-        from telepito.ui.base import UiBack
+        from installer.ui.base import UiBack
 
         self.assertEqual(self.run_cli(ui=ScriptedUi([UiBack]))[0], 0)
 

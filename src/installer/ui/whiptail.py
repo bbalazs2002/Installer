@@ -3,7 +3,7 @@
 ``whiptail`` draws on the terminal (inherited stdin/stdout) and reports the user's choice on
 stderr, which is captured here. Exit status 0 is OK/Yes, 1 is Cancel/No and 255 is Esc; for
 everything except a yes/no question both Cancel and Esc mean "back" and raise
-:class:`~telepito.ui.base.UiBack`. Secrets typed into a password box come back through the
+:class:`~installer.ui.base.UiBack`. Secrets typed into a password box come back through the
 stderr pipe and never appear in an argument list.
 """
 

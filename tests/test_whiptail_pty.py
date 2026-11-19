@@ -89,8 +89,8 @@ def drive(
 
 PRELUDE = """
 import json
-from telepito.ui.base import Item, UiBack
-from telepito.ui.whiptail import WhiptailUi
+from installer.ui.base import Item, UiBack
+from installer.ui.whiptail import WhiptailUi
 ui = WhiptailUi()
 def finish(value):
     open(OUT, "w").write(json.dumps(value))

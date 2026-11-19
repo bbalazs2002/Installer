@@ -1,6 +1,6 @@
 """Carrying out an installation, an update or a rollback (specification 6.3, 6.4, 6.6).
 
-The decisions are made by :mod:`telepito.plan`; this module executes them. All outside
+The decisions are made by :mod:`installer.plan`; this module executes them. All outside
 effects go through injected collaborators (GitHub, Docker, the UI, the database and
 environment extension points), so the whole flow is testable with fakes.
 

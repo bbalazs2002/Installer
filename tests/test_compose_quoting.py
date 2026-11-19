@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from telepito.envfile import update_env_file
+from installer.envfile import update_env_file
 
 TRICKY = {
     "WITH_DOLLAR": "p$ss",

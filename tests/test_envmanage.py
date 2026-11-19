@@ -2,12 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from telepito.envconfig import EnvConfigError
-from telepito.envfile import read_env, update_env_file
-from telepito.envmanage import MASKED, NOT_SET, describe_env, edit_value, rotate_secret
-from telepito.errors import UserAbort
-from telepito.logging_ import Redactor
-from telepito.ui.scripted import ScriptedUi
+from installer.envconfig import EnvConfigError
+from installer.envfile import read_env, update_env_file
+from installer.envmanage import MASKED, NOT_SET, describe_env, edit_value, rotate_secret
+from installer.errors import UserAbort
+from installer.logging_ import Redactor
+from installer.ui.scripted import ScriptedUi
 
 from .test_wizard import ENV, MemoryVault, manifest
 

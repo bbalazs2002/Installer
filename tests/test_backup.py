@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from telepito.backup import (
+from installer.backup import (
     PRE_RESTORE,
     backup_filename,
     backup_refs,
@@ -14,8 +14,8 @@ from telepito.backup import (
     offer_retention,
     old_backups,
 )
-from telepito.logging_ import Logger
-from telepito.ui.scripted import ScriptedUi
+from installer.logging_ import Logger
+from installer.ui.scripted import ScriptedUi
 
 NOW = datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc)
 

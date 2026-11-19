@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from telepito.errors import PrerequisiteError
-from telepito.ui.base import Item, UiBack
-from telepito.ui.whiptail import BACKTITLE, WhiptailUi
+from installer.errors import PrerequisiteError
+from installer.ui.base import Item, UiBack
+from installer.ui.whiptail import BACKTITLE, WhiptailUi
 
 
 class FakeRunner:

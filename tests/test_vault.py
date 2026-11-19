@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from telepito.logging_ import Redactor
-from telepito.vault import (
+from installer.logging_ import Redactor
+from installer.vault import (
     FORMAT_VERSION,
     MAC_LEN,
     SCRYPT_N,
@@ -231,7 +231,7 @@ class VaultTests(unittest.TestCase):
         import hashlib
         import hmac as hmac_module
 
-        from telepito import vault as vm
+        from installer import vault as vm
 
         salt = b"" * vm.SALT_LEN
         key_hex, mac_key = vm._derive_keys(PASSWORD, salt)

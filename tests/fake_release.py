@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from telepito.github import Asset, GitHub, ProgressCallback, Release, TokenStatus
+from installer.github import Asset, GitHub, ProgressCallback, Release, TokenStatus
 
 COMPOSE = """services:
   app:

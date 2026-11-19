@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from telepito.docker import DockerError
-from telepito.docker_cli import SubprocessDocker
-from telepito.health import HealthResponse, is_healthy
-from telepito.logging_ import Redactor
-from telepito.versions import Version
+from installer.docker import DockerError
+from installer.docker_cli import SubprocessDocker
+from installer.health import HealthResponse, is_healthy
+from installer.logging_ import Redactor
+from installer.versions import Version
 
 
 class Runner:

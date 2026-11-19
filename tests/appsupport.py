@@ -8,14 +8,14 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from telepito.app import Context
-from telepito.envconfig import DefaultEnvConfigurator
-from telepito.envfile import read_env
-from telepito.health import HealthResponse
-from telepito.logging_ import Logger
-from telepito.paths import Paths
-from telepito.tokenstore import TokenStore
-from telepito.ui.scripted import ScriptedUi
+from installer.app import Context
+from installer.envconfig import DefaultEnvConfigurator
+from installer.envfile import read_env
+from installer.health import HealthResponse
+from installer.logging_ import Logger
+from installer.paths import Paths
+from installer.tokenstore import TokenStore
+from installer.ui.scripted import ScriptedUi
 
 from .fake_docker import FakeDocker
 from .fake_release import MemoryGitHub, ReleaseSpec
@@ -100,10 +100,10 @@ class AppTestCase(unittest.TestCase):
         """Install ``version`` through the Installer directly (set-up, not under test)."""
         import shutil
 
-        from telepito.installer import InstallJob
-        from telepito.plan import PlanRequest, build_plan
-        from telepito.state import inspect_target
-        from telepito.versions import Version
+        from installer.installer import InstallJob
+        from installer.plan import PlanRequest, build_plan
+        from installer.state import inspect_target
+        from installer.versions import Version
 
         release = self.publish(version, **kwargs)
         installer = self.ctx.installer()
@@ -125,7 +125,7 @@ class AppTestCase(unittest.TestCase):
 
     def call(self, flow: Any, *args: Any) -> None:
         """Run a flow; Esc ("back") ending it is the normal way out and not an error."""
-        from telepito.ui.base import UiBack
+        from installer.ui.base import UiBack
 
         try:
             flow(self.ctx, *args)

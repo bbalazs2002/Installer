@@ -1,7 +1,7 @@
 import unittest
 
-from telepito.ui.base import Item, UiBack, ask_validated
-from telepito.ui.scripted import ScriptedUi
+from installer.ui.base import Item, UiBack, ask_validated
+from installer.ui.scripted import ScriptedUi
 
 ITEMS = [Item("a", "Alma"), Item("b", "Barack")]
 

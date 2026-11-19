@@ -1,18 +1,18 @@
 import unittest
 from datetime import datetime, timezone
 
-from telepito import __version__
-from telepito.cli import main
-from telepito.docker import ContainerInfo, Docker
-from telepito.github import Asset, GitHub, GitHubError, GitHubRateLimited, Release
-from telepito.validators import (
+from installer import __version__
+from installer.cli import main
+from installer.docker import ContainerInfo, Docker
+from installer.github import Asset, GitHub, GitHubError, GitHubRateLimited, Release
+from installer.validators import (
     is_app_name,
     is_asset_name,
     is_db_identifier,
     is_env_name,
     is_repo,
 )
-from telepito.versions import Version
+from installer.versions import Version
 
 
 class InterfaceTests(unittest.TestCase):

@@ -19,17 +19,17 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from telepito.docker_cli import SubprocessDocker
-from telepito.logging_ import Logger
-from telepito.manifest import parse_manifest
-from telepito.postgres import (
+from installer.docker_cli import SubprocessDocker
+from installer.logging_ import Logger
+from installer.manifest import parse_manifest
+from installer.postgres import (
     PostgresError,
     PostgresOps,
     PsqlClient,
     find_postgres_containers,
     scram_sha256_verifier,
 )
-from telepito.ui.scripted import ScriptedUi
+from installer.ui.scripted import ScriptedUi
 
 from .test_wizard import MemoryVault
 
@@ -260,14 +260,14 @@ class _Tests:
         info = self.create(["generate"]).info
         self.client.run(f'DROP DATABASE "{self.db}";')
         self.ui.push(False)  # do not continue without a backup
-        from telepito.errors import UserAbort
+        from installer.errors import UserAbort
 
         with self.assertRaises(UserAbort):
             self.ops.backup(info, "0.1.0", self.dir / "backups")
         self.assertEqual(list((self.dir / "backups").iterdir()), [])
 
     def test_wrong_confirmation_does_not_touch_the_database(self: Any) -> None:
-        from telepito.errors import UserAbort
+        from installer.errors import UserAbort
 
         info = self.create(["generate"]).info
         self.client.run("CREATE TABLE keep (x int); INSERT INTO keep VALUES (1);", database=self.db)
