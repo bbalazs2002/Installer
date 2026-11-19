@@ -29,6 +29,13 @@ class _Handle(ProgressHandle):
         self._sink.append((percent, text))
 
 
+class _DefaultAnswer:
+    """Marker: "the user just pressed Enter", i.e. accept the prefilled default text."""
+
+    def __repr__(self) -> str:
+        return "DEFAULT"
+
+
 class ScriptedUi(Ui):
     """Pops one prepared answer per question.
 
@@ -36,6 +43,8 @@ class ScriptedUi(Ui):
     choose_many, and ``UiBack`` (class or instance) to simulate Esc. Messages and progress
     need no answer; they are only recorded.
     """
+
+    DEFAULT = _DefaultAnswer()
 
     def __init__(self, answers: Sequence[Any] = ()) -> None:
         self._answers: deque[Any] = deque(answers)
@@ -90,6 +99,8 @@ class ScriptedUi(Ui):
     def text(self, prompt: str, *, title: str = "", default: str = "") -> str:
         self.calls.append(Call("text", title, prompt))
         answer = self._next("text")
+        if answer is self.DEFAULT:
+            return default
         if not isinstance(answer, str):
             raise AssertionError(f"ScriptedUi: szöveg kellene, kapott: {answer!r}")
         return answer

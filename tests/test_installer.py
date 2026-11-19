@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,6 +49,7 @@ class FakeDb(DatabaseOps):
         self.calls: list[str] = []
         self.backup_result: Path | None = None
         self.write_backups = True
+        self.proceed_without_backup = False  # the user's answer when a backup fails
 
     def precheck(self, manifest: Manifest) -> list[str]:
         self.calls.append("precheck")
@@ -60,7 +62,9 @@ class FakeDb(DatabaseOps):
     def backup(self, info: DatabaseInfo, version: str, backups_dir: Path) -> Path | None:
         self.calls.append(f"backup:{version}")
         if not self.write_backups:
-            return None
+            if self.proceed_without_backup:
+                return None
+            raise UserAbort("Mentés nélkül a művelet megáll.")
         path = backups_dir / f"investment-{version}-20261119.dump"
         path.write_bytes(b"dump")
         self.backup_result = path
@@ -68,6 +72,9 @@ class FakeDb(DatabaseOps):
 
     def restore(self, info: DatabaseInfo, backup: Path) -> None:
         self.calls.append(f"restore:{backup.name}")
+
+    def rotate_password(self, manifest: Manifest, info: DatabaseInfo, env_path: Path) -> None:
+        self.calls.append("rotate")
 
 
 class InstallerTestCase(unittest.TestCase):
@@ -379,6 +386,35 @@ class UpdateTests(InstallerTestCase):
             self.install("0.2.0")
         self.assertEqual(load_install_info(self.target).version, "0.1.0")  # type: ignore[union-attr]
         self.assertEqual(self.docker.names().count("compose_up"), 1)
+
+    def test_update_may_continue_without_a_backup_when_the_user_insists(self) -> None:
+        self.install("0.1.0")
+        self.db.write_backups = False
+        self.db.proceed_without_backup = True
+        result = self.install("0.2.0")
+        self.assertIsNone(result.backup_path)
+        self.assertEqual(load_install_info(self.target).version, "0.2.0")  # type: ignore[union-attr]
+
+    def test_old_backups_are_offered_for_deletion_and_the_choice_is_remembered(self) -> None:
+        self.install("0.1.0")
+        old = self.target / "backups" / "investment-0.0.1-20240101T000000Z.dump"
+        old.write_bytes(b"x" * 2048)
+        long_ago = 1_600_000_000  # September 2020
+        os.utime(old, (long_ago, long_ago))
+        self.ui.push("always")  # delete now, and always from now on
+        self.install("0.2.0")
+        self.assertFalse(old.exists())
+        info = load_install_info(self.target)
+        assert info is not None
+        self.assertTrue(info.auto_delete_old_backups)
+        # next update: deleted silently, no question
+        again = self.target / "backups" / "investment-0.0.2-20240201T000000Z.dump"
+        again.write_bytes(b"y")
+        os.utime(again, (long_ago, long_ago))
+        before = len([c for c in self.ui.calls if c.kind == "menu"])
+        self.install("0.3.0")
+        self.assertFalse(again.exists())
+        self.assertEqual(len([c for c in self.ui.calls if c.kind == "menu"]), before)
 
     def test_compose_changes_are_shown_and_dangerous_ones_confirmed(self) -> None:
         self.install("0.1.0")

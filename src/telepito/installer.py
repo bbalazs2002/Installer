@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .backup import backup_refs, offer_retention
 from .composediff import review_compose
 from .docker import Docker, DockerError
 from .envconfig import EnvConfigurator
@@ -98,11 +99,19 @@ class DatabaseOps(ABC):
 
     @abstractmethod
     def backup(self, info: DatabaseInfo, version: str, backups_dir: Path) -> Path | None:
-        """Dump the database; the file name carries ``version`` (the pre-change version)."""
+        """Dump the database; the file name carries ``version`` (the pre-change version).
+
+        Returns the file, or ``None`` if the backup failed *and the user explicitly chose to
+        continue without one*. A refusal to continue raises :class:`UserAbort`.
+        """
 
     @abstractmethod
     def restore(self, info: DatabaseInfo, backup: Path) -> None:
         """Restore a dump. Implementations ask for a strong confirmation themselves."""
+
+    @abstractmethod
+    def rotate_password(self, manifest: Manifest, info: DatabaseInfo, env_path: Path) -> None:
+        """Change the database password and the database URL in ``env_path`` together."""
 
 
 def _default_port_in_use(port: int) -> bool:
@@ -271,6 +280,7 @@ class _Run:
     prior: InstallInfo | None
     db_info: DatabaseInfo | None = None
     backup_path: Path | None = None
+    auto_delete_backups: bool = False
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -511,11 +521,20 @@ class Installer:
         run.db_info = run.prior.database
         if run.prior.database is None:
             raise TelepitoError("A telepítési nyilvántartásból hiányzik az adatbázis adata.")
-        run.backup_path = self.d.db.backup(
-            run.prior.database, run.prior.version, run.layout.backups
+        self._backup_database(run, run.prior)
+
+    def _backup_database(self, run: _Run, prior: InstallInfo) -> None:
+        """Back up before changing anything, then offer to clean up old backups (7.3, 7.5)."""
+        assert self.d.db is not None and prior.database is not None
+        run.backup_path = self.d.db.backup(prior.database, prior.version, run.layout.backups)
+        run.auto_delete_backups = offer_retention(
+            self.d.ui,
+            self.d.log,
+            run.layout.backups,
+            auto_delete=prior.auto_delete_old_backups,
+            now=self.d.clock(),
+            database=prior.database.name,
         )
-        if run.backup_path is None:
-            raise UserAbort("Az adatbázis-mentés nem készült el, a művelet megáll.")
 
     def _load_image(self, run: _Run, staging: Path) -> None:
         docker = self.d.docker
@@ -742,7 +761,7 @@ class Installer:
             migrations=run.migrations,
             database=run.db_info,
             port=run.port,
-            auto_delete_old_backups=run.prior.auto_delete_old_backups if run.prior else False,
+            auto_delete_old_backups=run.auto_delete_backups,
         )
         save_install_info(layout.root, info)
 
@@ -892,6 +911,7 @@ class Installer:
                 target_state=inspect_target(target),
                 registry=load_installs(d.state_dir / "installs.json"),
                 requested_migrations=migrations,
+                backups=backup_refs(layout.backups, info.database.name) if info.database else (),
             )
         )
         d.ui.message(format_plan(plan), title="Visszaállítás", scroll=True)
@@ -910,13 +930,12 @@ class Installer:
             migrations=migrations or (),
             prior=info,
             db_info=info.database,
+            auto_delete_backups=info.auto_delete_old_backups,
         )
         if manifest.database is not None:
             if d.db is None or info.database is None:
                 raise TelepitoError("Az adatbázis-mentéshez nincs adatbázis-kezelő.")
-            run.backup_path = d.db.backup(info.database, info.version, layout.backups)
-            if run.backup_path is None:
-                raise UserAbort("Az adatbázis-mentés nem készült el, a művelet megáll.")
+            self._backup_database(run, info)
         self._write_compose_env(layout, manifest, version, port, info.database)
         return self._start_and_finalize(run, release_dir)
 

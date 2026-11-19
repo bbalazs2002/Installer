@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from telepito.docker import ContainerInfo, Docker, DockerError, DockerInfo, ExecResult
+
+
+@dataclass(frozen=True)
+class ExecRecord:
+    container: str
+    args: tuple[str, ...]
+    stdin: bytes | None = None
+    stdout_to: Path | None = None
+    stdin_from: Path | None = None
+
+    @property
+    def sql(self) -> str:
+        return (self.stdin or b"").decode("utf-8", errors="replace")
 
 
 class FakeDocker(Docker):
@@ -19,6 +33,10 @@ class FakeDocker(Docker):
         self.free_root = "/var/lib/docker"
         self.logs = "app | starting..."
         self.exec_results: list[ExecResult] = []
+        # Full record of every exec call, including what went to stdin.
+        self.exec_log: list[ExecRecord] = []
+        # Optional programmable fake: returns a result, or None to fall back to exec_results.
+        self.exec_handler: Callable[[ExecRecord], ExecResult | None] | None = None
         # Called on every ``compose_up`` (project, compose_file, env_file): lets tests flip
         # the application's reported state.
         self.on_up: Callable[[str, Path, Path], None] | None = None
@@ -99,4 +117,11 @@ class FakeDocker(Docker):
         timeout: float = 300,
     ) -> ExecResult:
         self._record("exec", container, tuple(args))
-        return self.exec_results.pop(0) if self.exec_results else ExecResult(0)
+        record = ExecRecord(container, tuple(args), stdin, stdout_to, stdin_from)
+        self.exec_log.append(record)
+        result = self.exec_handler(record) if self.exec_handler is not None else None
+        if result is None:
+            result = self.exec_results.pop(0) if self.exec_results else ExecResult(0)
+        if stdout_to is not None and result.stdout:
+            stdout_to.write_bytes(result.stdout)
+        return result
