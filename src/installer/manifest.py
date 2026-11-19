@@ -11,8 +11,11 @@ from .errors import InstallerError
 from .validators import (
     is_app_name,
     is_asset_name,
+    is_container_path,
     is_db_identifier,
     is_env_name,
+    is_relative_data_path,
+    is_volume_name,
 )
 
 SUPPORTED_SCHEMA_VERSION = 1
@@ -20,11 +23,14 @@ DEFAULT_KEEP = 3
 URL_TEMPLATE_FIELDS = frozenset({"user", "password", "host", "port", "database"})
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 GROUPS = ("basic", "advanced")
+BASE_PATH_ENV = "BASE_PATH"  # the variable the ``{basePath}`` placeholder of proxy.snippet reads
 
 _ROOT_KEYS = {
     "schemaVersion", "name", "displayName", "image", "compose", "port", "health",
-    "database", "migrations", "env", "proxy", "postInstall", "keep",
+    "database", "migrations", "env", "proxy", "postInstall", "keep", "volumes",
 }  # fmt: skip
+_VOLUME_KEYS = {"name", "description", "mountPath", "kind", "hostPath", "backup"}
+VOLUME_KINDS = ("named", "bind")
 _ENV_KEYS = {
     "name", "description", "default", "fixed", "required", "secret", "generate",
     "validate", "minLength", "rotationWarning", "group",
@@ -65,6 +71,26 @@ class DatabaseSpec:
 
 
 @dataclass(frozen=True)
+class VolumeSpec:
+    """A data volume of the application (lives outside the image).
+
+    ``named`` is a Docker named volume of the compose project; ``bind`` is a directory below
+    the installer-managed data directory (``${DATA_DIR}/<host_path>``).
+    """
+
+    name: str
+    mount_path: str
+    description: str = ""
+    kind: str = "named"
+    host_path: str | None = None
+    backup: bool = True
+
+    @property
+    def is_bind(self) -> bool:
+        return self.kind == "bind"
+
+
+@dataclass(frozen=True)
 class Manifest:
     schema_version: int
     name: str
@@ -85,12 +111,20 @@ class Manifest:
     proxy_snippet: str = ""
     post_install: tuple[str, ...] = ()
     keep: int = DEFAULT_KEEP
+    volumes: tuple[VolumeSpec, ...] = ()
     # Non-fatal findings (e.g. unknown keys), already user-facing.
     warnings: tuple[str, ...] = field(default=(), compare=False)
 
-    def proxy_snippet_for(self, port: int) -> str:
-        """The Apache snippet with ``{port}`` substituted (plain replace; braces stay safe)."""
-        return self.proxy_snippet.replace("{port}", str(port))
+    def proxy_snippet_for(self, port: int, base_path: str | None = None) -> str:
+        """The Apache snippet with ``{port}`` (and ``{basePath}``) substituted.
+
+        Plain replacement, so braces elsewhere in the snippet stay safe. ``{basePath}`` is
+        replaced only when a value is given (the ``BASE_PATH`` the installation uses).
+        """
+        text = self.proxy_snippet.replace("{port}", str(port))
+        if base_path is not None:
+            text = text.replace("{basePath}", base_path)
+        return text
 
     def env_by_name(self, name: str) -> EnvVar | None:
         for item in self.env:
@@ -269,6 +303,71 @@ def _parse_database(reader: _Reader, raw: Any, app_name: str) -> DatabaseSpec | 
     )
 
 
+def _parse_volume(reader: _Reader, raw: Any, index: int) -> VolumeSpec:
+    path = f"volumes[{index}]"
+    data = reader.obj(raw, path)
+    reader.known(data, _VOLUME_KEYS, path)
+    name = reader.string(reader.required(data, "name", path), f"{path}.name", allow_empty=False)
+    if not is_volume_name(name):
+        raise ManifestError(
+            f"Invalid volume name: {name!r} (lowercase letters, digits and underscores, "
+            "starting with a letter, at most 32 characters)."
+        )
+    path = f"volumes[{name}]"
+    mount_path = reader.string(
+        reader.required(data, "mountPath", path), f"{path}.mountPath", allow_empty=False
+    )
+    if not is_container_path(mount_path):
+        raise ManifestError(
+            f"{path}.mountPath must be an absolute path inside the container: {mount_path!r}"
+        )
+    kind = reader.string(data.get("kind", "named"), f"{path}.kind")
+    if kind not in VOLUME_KINDS:
+        raise ManifestError(f"{path}.kind must be 'named' or 'bind', not {kind!r}.")
+    host_path: str | None = None
+    if kind == "bind":
+        host_path = reader.string(
+            reader.required(data, "hostPath", path), f"{path}.hostPath", allow_empty=False
+        )
+        if not is_relative_data_path(host_path):
+            raise ManifestError(
+                f"{path}.hostPath must be a relative path below the data directory "
+                f"(plain names separated by /, no ..): {host_path!r}"
+            )
+    elif "hostPath" in data:
+        raise ManifestError(f"{path}.hostPath only applies to kind 'bind'.")
+    return VolumeSpec(
+        name=name,
+        mount_path=mount_path,
+        description=reader.string(data.get("description", ""), f"{path}.description"),
+        kind=kind,
+        host_path=host_path,
+        backup=reader.boolean(data.get("backup", True), f"{path}.backup"),
+    )
+
+
+def _parse_volumes(reader: _Reader, root: dict[str, Any]) -> tuple[VolumeSpec, ...]:
+    raw = root.get("volumes", [])
+    if not isinstance(raw, list):
+        raise ManifestError("The volumes field must be a list.")
+    volumes = tuple(_parse_volume(reader, item, i) for i, item in enumerate(raw))
+    names: set[str] = set()
+    mounts: set[str] = set()
+    hosts: set[str] = set()
+    for volume in volumes:
+        if volume.name in names:
+            raise ManifestError(f"The volume {volume.name} appears twice in the volumes list.")
+        if volume.mount_path.rstrip("/") in mounts:
+            raise ManifestError(f"Two volumes use the same mountPath: {volume.mount_path}")
+        if volume.host_path is not None and volume.host_path in hosts:
+            raise ManifestError(f"Two volumes use the same hostPath: {volume.host_path}")
+        names.add(volume.name)
+        mounts.add(volume.mount_path.rstrip("/"))
+        if volume.host_path is not None:
+            hosts.add(volume.host_path)
+    return volumes
+
+
 def parse_manifest(data: Any) -> Manifest:
     """Validate a decoded ``deploy.json`` and return a :class:`Manifest`."""
     warnings: list[str] = []
@@ -375,6 +474,12 @@ def parse_manifest(data: Any) -> Manifest:
     )
 
     keep = reader.integer(root.get("keep", DEFAULT_KEEP), "keep", minimum=1, maximum=100)
+    volumes = _parse_volumes(reader, root)
+
+    if "{basePath}" in proxy_snippet and BASE_PATH_ENV not in seen:
+        raise ManifestError(
+            f"proxy.snippet uses {{basePath}}, so the env list must declare {BASE_PATH_ENV}."
+        )
 
     return Manifest(
         schema_version=version,
@@ -395,6 +500,7 @@ def parse_manifest(data: Any) -> Manifest:
         proxy_snippet=proxy_snippet,
         post_install=post_install,
         keep=keep,
+        volumes=volumes,
         warnings=tuple(warnings),
     )
 

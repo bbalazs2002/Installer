@@ -14,7 +14,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from .docker import ContainerInfo, Docker, DockerError, DockerInfo, ExecResult
+from .docker import ContainerInfo, Docker, DockerError, DockerInfo, ExecResult, HelperMount
 from .logging_ import Redactor
 
 DEFAULT_TIMEOUT = 120.0
@@ -185,6 +185,57 @@ class SubprocessDocker(Docker):
         result = self._run(args, cwd=compose_file.parent)
         text = (result.stdout + result.stderr).decode("utf-8", errors="replace")
         return self._redactor.redact(text)
+
+    def compose_config(self, project: str, compose_file: Path, env_file: Path) -> dict[str, Any]:
+        args = [*self._compose_args(project, compose_file, env_file), "config", "--format", "json"]
+        result = self._check(
+            self._run(args, cwd=compose_file.parent), "Reading the compose configuration"
+        )
+        try:
+            data = json.loads(result.stdout)
+        except ValueError as exc:
+            raise DockerError("The output of docker compose config cannot be understood.") from exc
+        if not isinstance(data, dict):
+            raise DockerError("The output of docker compose config cannot be understood.")
+        return data
+
+    def volume_list(self, project: str) -> list[str]:
+        result = self._check(
+            self._run(
+                [
+                    "volume",
+                    "ls",
+                    "--filter",
+                    f"label=com.docker.compose.project={project}",
+                    "--format",
+                    "{{.Name}}",
+                ]
+            ),
+            "Listing the volumes",
+        )
+        return result.stdout.decode("utf-8", errors="replace").split()
+
+    def run_helper(
+        self,
+        image: str,
+        command: Sequence[str],
+        *,
+        mounts: Sequence[HelperMount] = (),
+        stdin_from: Path | None = None,
+        stdout_to: Path | None = None,
+        timeout: float = 3600,
+    ) -> ExecResult:
+        if not command:
+            raise DockerError("A helper container needs a command.")
+        args = ["run", "--rm", "-i", "--pull", "never", "--network", "none", "--user", "0"]
+        for mount in mounts:
+            if ":" in mount.source or "," in mount.source:
+                raise DockerError(f"The path {mount.source!r} cannot be mounted.")
+            args += ["-v", f"{mount.source}:{mount.target}" + (":ro" if mount.read_only else "")]
+        args += ["--entrypoint", command[0], image, *command[1:]]
+        result = self._run(args, stdin_file=stdin_from, stdout_file=stdout_to, timeout=timeout)
+        masked = self._redactor.redact(result.stderr.decode("utf-8", errors="replace"))
+        return ExecResult(result.returncode, result.stdout, masked.encode("utf-8"))
 
     def exec(
         self,

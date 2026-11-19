@@ -3,8 +3,9 @@ import shutil
 import unittest
 
 from installer.app import run_action, run_menu
+from installer.backup import group_sets, list_all_backups
 from installer.errors import InstallerError
-from installer.flows_db import database_menu
+from installer.flows_data import backup_menu, set_key
 from installer.flows_env import env_screen, rotate_screen, vault_menu
 from installer.flows_install import OTHER_REPO, TOGGLE_PRERELEASES, install_flow
 from installer.flows_misc import (
@@ -332,7 +333,7 @@ class DatabaseFlowTests(AppTestCase):
 
     def test_manual_backup(self) -> None:
         self.ui.push("backup", UiBack)
-        self.call(database_menu)
+        self.call(backup_menu)
         dumps = list(self.backups.glob("*.dump"))
         self.assertEqual(len(dumps), 1)
         self.assertIn("The backup was created", self.messages())
@@ -344,9 +345,10 @@ class DatabaseFlowTests(AppTestCase):
             self.backups,  # type: ignore[union-attr]
         )
         (dump,) = self.backups.glob("*.dump")
+        (backup_set,) = group_sets(list_all_backups(self.backups))
         self.docker.calls.clear()
-        self.ui.push("restore", str(dump), UiBack)
-        self.call(database_menu)
+        self.ui.push("restore", set_key(backup_set), UiBack)
+        self.call(backup_menu)
         self.assertEqual(self.db.calls[-1], f"restore:{dump.name}")
         order = self.docker.names()
         self.assertLess(order.index("compose_stop"), order.index("compose_up"))
@@ -354,16 +356,18 @@ class DatabaseFlowTests(AppTestCase):
 
     def test_restore_without_backups(self) -> None:
         self.ui.push("restore", UiBack)
-        self.call(database_menu)
+        self.call(backup_menu)
         self.assertIn("no backup", self.messages())
 
     def test_cleanup_deletes_old_backups_and_remembers_always(self) -> None:
+        self.backups.mkdir(exist_ok=True)
+        (self.backups / "investment-0.0.2-20261101T000000Z.dump").write_bytes(b"y")  # newest: kept
         old = self.backups / "investment-0.0.1-20240101T000000Z.dump"
         old.write_bytes(b"x")
         long_ago = 1_600_000_000
         os.utime(old, (long_ago, long_ago))
         self.ui.push("cleanup", "always", UiBack)
-        self.call(database_menu)
+        self.call(backup_menu)
         self.assertFalse(old.exists())
         info = load_install_info(self.target)
         assert info is not None
@@ -377,7 +381,7 @@ class DatabaseFlowTests(AppTestCase):
     def test_no_installation_with_a_database(self) -> None:
         shutil.rmtree(self.target)
         self.target.mkdir()
-        self.call(database_menu)
+        self.call(backup_menu)
         self.assertIn("no suitable", self.messages())
 
 

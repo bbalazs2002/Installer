@@ -150,11 +150,14 @@ class Context:
             ) from exc
         return info, manifest, layout
 
-    def pick_install(self, title: str, *, with_database: bool = False) -> InstallRecord | None:
-        """Choose one installed application (``None`` after telling the user there is none)."""
+    def pick_install(self, title: str, *, with_data: bool = False) -> InstallRecord | None:
+        """Choose one installed application (``None`` after telling the user there is none).
+
+        With ``with_data`` only applications that have a database or data volumes are offered.
+        """
         records = self.registry()
-        if with_database:
-            records = [r for r in records if self._has_database(r)]
+        if with_data:
+            records = [r for r in records if self._has_data(r)]
         if not records:
             self.ui.message("There is no suitable installed application.", title=title)
             return None
@@ -168,12 +171,19 @@ class Context:
         )
         return by_name[key]
 
-    def _has_database(self, record: InstallRecord) -> bool:
+    def _has_data(self, record: InstallRecord) -> bool:
         try:
             info = load_install_info(Path(record.path))
-        except InstallerError:
+            if info is None:
+                return False
+            if info.database is not None:
+                return True
+            manifest = load_manifest(
+                (Layout(Path(record.path)).release_dir(info.version) / MANIFEST_ASSET).read_bytes()
+            )
+        except (InstallerError, OSError):
             return False
-        return info is not None and info.database is not None
+        return bool(manifest.volumes)
 
 
 # ------------------------------------------------------------------------- main menu
@@ -183,7 +193,7 @@ _MAIN_ITEMS = [
     ("updates", "Available updates"),
     ("secrets", "Passwords and .env"),
     ("rollback", "Roll back to a previous version"),
-    ("database", "Database (backup, restore, delete backups)"),
+    ("backups", "Backups (database and volumes: back up, restore, delete old)"),
     ("status", "Status"),
     ("logs", "Logs"),
     ("settings", "Settings (GitHub token, known repositories)"),
@@ -194,7 +204,7 @@ _MAIN_ITEMS = [
 
 def run_menu(ctx: Context, *, updates_hint: Callable[[], int] | None = None) -> int:
     """The interactive main menu. Returns when the user quits (or presses Esc)."""
-    from .flows_db import database_menu
+    from .flows_data import backup_menu
     from .flows_env import secrets_menu
     from .flows_install import install_flow
     from .flows_misc import (
@@ -211,7 +221,7 @@ def run_menu(ctx: Context, *, updates_hint: Callable[[], int] | None = None) -> 
         "updates": updates_screen,
         "secrets": secrets_menu,
         "rollback": rollback_screen,
-        "database": database_menu,
+        "backups": backup_menu,
         "status": status_screen,
         "logs": logs_screen,
         "settings": settings_menu,

@@ -12,6 +12,25 @@
   a file renames itself to `installer.pyz` and leaves a `telepito.pyz` symlink behind.
 - Vaults written by 0.1.x (header `TELEPITO-VAULT`) still open and are rewritten with the new
   header on the next save.
+- **Data volumes.** `deploy.json` may declare `volumes` (named volumes, or bind mounts below
+  `${DATA_DIR}`). The compose file is checked through `docker compose config --format json`:
+  undeclared mounts, `docker.sock`, other host paths, `external` or renamed volumes stop the
+  installation before anything is changed, and a new installation shows the volumes and the
+  risky settings and asks once.
+- **Volume backups.** Before every update, downgrade or reinstall each volume with
+  `backup: true` is archived as `<volume>-<version>-<time>.tar.gz` (mode 600, read back to
+  verify) together with the database dump, which now share one time stamp. The application is
+  stopped while the volumes are copied and started again if the operation is cancelled. The
+  plan, the free-space check and the status screen know about the volumes.
+- **Restore and recovery.** The menu entry *Database* became *Backups*: back up now, restore any
+  part of any backup set (database and/or volumes, a safety copy is made first and the
+  application name must be typed), delete old backups. When a new release does not start, the
+  recovery menu can restore the volumes together with the database.
+- **Retention changed:** backups older than a year are still deleted, but the newest backup of
+  the database and of each volume is always kept, however old (also for applications that only
+  have a database).
+- `proxy.snippet` may use `{basePath}`, replaced by the installation's `BASE_PATH`.
+- The compose review no longer flags `user: "${APP_UID}:${APP_GID}"`.
 
 ## 0.1.1
 

@@ -525,14 +525,16 @@ class PostgresOps(DatabaseOps):
 
     # ------------------------------------------------------------------------ backup
 
-    def backup(self, info: DatabaseInfo, version: str, backups_dir: Path) -> Path | None:
+    def backup(
+        self, info: DatabaseInfo, version: str, backups_dir: Path, now: datetime | None = None
+    ) -> Path | None:
         """Dump the database into ``backups_dir`` (mode 600, verified readable).
 
         On failure the user decides whether to go on without a backup: ``None`` means "yes,
         without"; declining raises :class:`UserAbort`.
         """
         backups_dir.mkdir(parents=True, exist_ok=True)
-        path = backups_dir / backup_filename(info.name, version, self._clock())
+        path = backups_dir / backup_filename(info.name, version, now or self._clock())
         create_private_file(path)
         try:
             dump = self._docker.exec(

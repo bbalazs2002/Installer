@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from .errors import InstallerError
 
@@ -42,6 +43,15 @@ class ExecResult:
     returncode: int
     stdout: bytes = b""
     stderr: bytes = b""
+
+
+@dataclass(frozen=True)
+class HelperMount:
+    """A mount of a helper container: a Docker volume name or an absolute host directory."""
+
+    source: str
+    target: str
+    read_only: bool = False
 
 
 class Docker(ABC):
@@ -92,6 +102,32 @@ class Docker(ABC):
     def compose_logs(
         self, project: str, compose_file: Path, env_file: Path, *, tail: int = 50
     ) -> str: ...
+
+    @abstractmethod
+    def compose_config(self, project: str, compose_file: Path, env_file: Path) -> dict[str, Any]:
+        """``docker compose config --format json``: the normalised, substituted configuration."""
+
+    @abstractmethod
+    def volume_list(self, project: str) -> list[str]:
+        """Names of the Docker volumes that belong to the compose ``project``."""
+
+    @abstractmethod
+    def run_helper(
+        self,
+        image: str,
+        command: Sequence[str],
+        *,
+        mounts: Sequence[HelperMount] = (),
+        stdin_from: Path | None = None,
+        stdout_to: Path | None = None,
+        timeout: float = 3600,
+    ) -> ExecResult:
+        """Run ``command`` once in a throw-away container of the (already loaded) ``image``.
+
+        The container runs as root without network access and is removed afterwards. It is used
+        only to read or write the contents of data volumes (``tar``, ``du``); a file is streamed
+        through ``stdin_from`` / ``stdout_to`` so no archive is ever written by root.
+        """
 
     @abstractmethod
     def exec(

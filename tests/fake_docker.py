@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
+import io
+import tarfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from installer.docker import ContainerInfo, Docker, DockerError, DockerInfo, ExecResult
+from installer.docker import (
+    ContainerInfo,
+    Docker,
+    DockerError,
+    DockerInfo,
+    ExecResult,
+    HelperMount,
+)
+
+
+@dataclass(frozen=True)
+class HelperRecord:
+    image: str
+    command: tuple[str, ...]
+    mounts: tuple[HelperMount, ...]
 
 
 @dataclass(frozen=True)
@@ -41,6 +58,12 @@ class FakeDocker(Docker):
         # the application's reported state.
         self.on_up: Callable[[str, Path, Path], None] | None = None
         self.up_log: list[tuple[str, Path, Path, str]] = []  # incl. APP_VERSION from env_file
+        # What ``compose config`` returns: a function (project, compose_file, env_file) -> dict.
+        self.config_handler: Callable[[str, Path, Path], dict[str, Any] | None] | None = None
+        # The contents of the fake volumes / bind directories, keyed by the mount source.
+        self.volume_data: dict[str, dict[str, bytes]] = {}
+        self.helper_log: list[HelperRecord] = []
+        self.helper_handler: Callable[[HelperRecord], ExecResult | None] | None = None
 
     def _record(self, name: str, *args: object) -> None:
         self.calls.append((name, args))
@@ -105,6 +128,66 @@ class FakeDocker(Docker):
     ) -> str:
         self._record("compose_logs", project, tail)
         return self.logs
+
+    def compose_config(self, project: str, compose_file: Path, env_file: Path) -> dict[str, Any]:
+        self._record("compose_config", project)
+        if self.config_handler is not None:
+            config = self.config_handler(project, compose_file, env_file)
+            if config is not None:
+                return config
+        return {"name": project, "services": {}, "volumes": {}}
+
+    def volume_list(self, project: str) -> list[str]:
+        self._record("volume_list", project)
+        return sorted(self.volume_data)
+
+    def run_helper(
+        self,
+        image: str,
+        command: Sequence[str],
+        *,
+        mounts: Sequence[HelperMount] = (),
+        stdin_from: Path | None = None,
+        stdout_to: Path | None = None,
+        timeout: float = 3600,
+    ) -> ExecResult:
+        """Understands the three helper commands the installer uses (tar create/extract, du).
+
+        The "volumes" are dictionaries in ``volume_data`` keyed by the mount source.
+        """
+        self._record("run_helper", image, tuple(command))
+        record = HelperRecord(image, tuple(command), tuple(mounts))
+        self.helper_log.append(record)
+        if self.helper_handler is not None:
+            handled = self.helper_handler(record)
+            if handled is not None:
+                return handled
+        (mount,) = [m for m in mounts if m.target == "/data"]
+        script = " ".join(command)
+        files = self.volume_data.setdefault(mount.source, {})
+        if "tar czf" in script:
+            assert stdout_to is not None
+            buffer = io.BytesIO()
+            with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+                for name, content in sorted(files.items()):
+                    info = tarfile.TarInfo(name)
+                    info.size = len(content)
+                    archive.addfile(info, io.BytesIO(content))
+            stdout_to.write_bytes(buffer.getvalue())
+            return ExecResult(0)
+        if "tar xzf" in script:
+            assert stdin_from is not None and not mount.read_only
+            files.clear()
+            with tarfile.open(stdin_from, "r:gz") as archive:
+                for member in archive:
+                    extracted = archive.extractfile(member)
+                    if extracted is not None:
+                        files[member.name] = extracted.read()
+            return ExecResult(0)
+        if "du -sk" in script:
+            kilobytes = max(1, sum(len(c) for c in files.values()) // 1024)
+            return ExecResult(0, f"{kilobytes}\t/data\n".encode())
+        return ExecResult(1, b"", b"unknown helper command")
 
     def exec(
         self,

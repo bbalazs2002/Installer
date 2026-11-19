@@ -237,6 +237,8 @@ def _summary(manifest: Manifest, result: InstallResult) -> str:
         lines += ["", "To do:"] + [f"  - {step}" for step in result.post_install]
     if result.backup_path is not None:
         lines += ["", f"Database backup: {result.backup_path}"]
+    if result.volume_backups:
+        lines += ["", "Volume backups:"] + [f"  {path}" for path in result.volume_backups]
     return "\n".join(lines)
 
 

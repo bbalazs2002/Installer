@@ -9,13 +9,17 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from typing import Any
 
+from .backup import list_volume_backups
 from .docker import Docker, DockerError
 from .health import HealthChecker
 from .installer import MANIFEST_ASSET, Layout
-from .manifest import ManifestError, load_manifest
+from .manifest import Manifest, ManifestError, load_manifest
 from .state import InstallRecord, StateError, load_install_info
 from .versions import Version
+from .volumebackup import measure_volume
+from .volumes import ResolvedVolume, check_volumes, parse_compose_config
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,8 @@ class InstallStatus:
     health: str  # "ok", "not responding", or a short problem description
     containers: str
     note: str = ""
+    # One entry per data volume: name, kind, mountPath, backup, sizeBytes, lastBackup.
+    volumes: tuple[dict[str, object], ...] = ()
 
     def to_json(self) -> dict[str, object]:
         return asdict(self)
@@ -43,7 +49,7 @@ def _one(record: InstallRecord, docker: Docker, health: HealthChecker) -> Instal
     from pathlib import Path
 
     target = Path(record.path)
-    base = {"name": record.name, "repo": record.repo, "path": record.path}
+    base: dict[str, Any] = {"name": record.name, "repo": record.repo, "path": record.path}
     try:
         info = load_install_info(target)
     except StateError as exc:
@@ -92,8 +98,51 @@ def _one(record: InstallRecord, docker: Docker, health: HealthChecker) -> Instal
             status = f"HTTP {response.status}"
     except OSError:
         pass
+    volumes = _volume_rows(docker, manifest, layout, info.version)
     return InstallStatus(**base, version=info.version, port=port, health=status,
-                         containers=containers, note=note)  # fmt: skip
+                         containers=containers, note=note, volumes=volumes)  # fmt: skip
+
+
+def _volume_rows(
+    docker: Docker, manifest: Manifest, layout: Layout, version: str
+) -> tuple[dict[str, object], ...]:
+    """The data volumes with their size and the time of the newest archive of each."""
+    if not manifest.volumes:
+        return ()
+    resolved: dict[str, ResolvedVolume] = {}
+    try:
+        config = docker.compose_config(
+            manifest.project_name,
+            layout.release_dir(version) / manifest.compose_file,
+            layout.compose_env,
+        )
+        check = check_volumes(
+            parse_compose_config(config),
+            manifest.volumes,
+            project=manifest.project_name,
+            data_dir=str(layout.data_dir),
+        )
+        resolved = {v.name: v for v in check.resolved}
+    except (DockerError, ValueError):
+        pass
+    image = f"{manifest.image_name}:{Version.parse(version).image_tag}"
+    newest: dict[str, str] = {}
+    for item in list_volume_backups(layout.backups):  # newest first
+        newest.setdefault(item.database, item.created)
+    rows: list[dict[str, object]] = []
+    for spec in manifest.volumes:
+        volume = resolved.get(spec.name)
+        rows.append(
+            {
+                "name": spec.name,
+                "kind": spec.kind,
+                "mountPath": spec.mount_path,
+                "backup": spec.backup,
+                "sizeBytes": measure_volume(docker, volume, image) if volume else None,
+                "lastBackup": newest.get(spec.name),
+            }
+        )
+    return tuple(rows)
 
 
 def _reported_version(body: bytes, field: str) -> Version | None:
@@ -118,6 +167,17 @@ def format_status(items: Sequence[InstallStatus]) -> str:
         if item.containers:
             lines.append("  containers:")
             lines += [f"    {line}" for line in item.containers.splitlines()]
+        if item.volumes:
+            lines.append("  data volumes:")
+            for row in item.volumes:
+                size = row["sizeBytes"]
+                size_text = (
+                    f"{int(size) / 2**20:.1f} MB" if isinstance(size, int) else "size unknown"
+                )
+                last = row["lastBackup"] or ("never" if row["backup"] else "not backed up")
+                lines.append(
+                    f"    {row['name']} ({row['kind']}) {row['mountPath']}  {size_text}, last backup: {last}"
+                )
         if item.note:
             lines.append(f"  note: {item.note}")
         blocks.append("\n".join(lines))

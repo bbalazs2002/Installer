@@ -14,6 +14,7 @@ from enum import Enum
 from .manifest import Manifest
 from .state import InstallInfo, InstallRecord, TargetState
 from .versions import Version
+from .volumes import describe
 
 DOWNGRADE_PHRASE = "DOWNGRADE"
 _MAX_LISTED_MIGRATIONS = 5
@@ -36,6 +37,7 @@ class StepId(str, Enum):
     ENV = "env"
     DB_CREATE = "db_create"
     DB_BACKUP = "db_backup"
+    DATA_BACKUP = "data_backup"
     LOAD_IMAGE = "load_image"
     ACTIVATE = "activate"
     START = "start"
@@ -100,6 +102,8 @@ class Plan:
     extra_migrations: tuple[str, ...] = ()
     # A backup that could replace the (too new) database for a blocked downgrade.
     restore_backup: BackupRef | None = None
+    # One line per data volume of the requested release (see volumes.describe).
+    volumes: tuple[str, ...] = ()
 
     @property
     def can_proceed(self) -> bool:
@@ -180,6 +184,12 @@ def _downgrade_plan(
     extra: tuple[str, ...] = ()
     restore: BackupRef | None = None
 
+    if manifest.volumes:
+        warnings.append(
+            "The contents of the data volumes do not go back with the release. A backup of "
+            "each volume is made before the change; it can be restored from the Backups menu."
+        )
+
     if manifest.database is not None:
         if request.requested_migrations is None:
             blockers.append(
@@ -245,6 +255,7 @@ def _plan(
         confirmation=confirmation,
         extra_migrations=extra,
         restore_backup=restore,
+        volumes=tuple(describe(v) for v in request.manifest.volumes),
     )
 
 
@@ -270,6 +281,14 @@ def _steps(kind: PlanKind, manifest: Manifest) -> tuple[Step, ...]:
             steps.append(Step(StepId.DB_CREATE, "Create the database and user"))
         else:
             steps.append(Step(StepId.DB_BACKUP, "Database backup before the change"))
+    if not is_new and any(v.backup for v in manifest.volumes):
+        steps.append(
+            Step(
+                StepId.DATA_BACKUP,
+                "Back up the data volumes (compressed archives; the application is stopped "
+                "while they are copied)",
+            )
+        )
     steps += [
         Step(StepId.LOAD_IMAGE, "Load the Docker image"),
         Step(StepId.ACTIVATE, "Prepare the release (directory, .env.production link, compose.env)"),
@@ -322,6 +341,8 @@ def format_plan(plan: Plan) -> str:
     lines.append(f"Requested version: {plan.requested_version}")
     if plan.blockers:
         lines += ["", "Blockers:"] + [f"  ✗ {b}" for b in plan.blockers]
+    if plan.volumes:
+        lines += ["", "Data volumes:"] + [f"  {v}" for v in plan.volumes]
     if plan.warnings:
         lines += ["", "Warnings:"] + [f"  ! {w}" for w in plan.warnings]
     if plan.steps and not plan.blockers:

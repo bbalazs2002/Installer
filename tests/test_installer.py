@@ -59,13 +59,16 @@ class FakeDb(DatabaseOps):
         self.calls.append("create")
         return DatabaseSetup(DB_INFO, {"DATABASE_URL": "postgresql://investment:pw@postgres/x"})
 
-    def backup(self, info: DatabaseInfo, version: str, backups_dir: Path) -> Path | None:
+    def backup(
+        self, info: DatabaseInfo, version: str, backups_dir: Path, now: Any = None
+    ) -> Path | None:
         self.calls.append(f"backup:{version}")
         if not self.write_backups:
             if self.proceed_without_backup:
                 return None
             raise UserAbort("Without a backup the operation stops.")
-        path = backups_dir / f"investment-{version}-20261119T000000Z.dump"
+        stamp = now.strftime("%Y%m%dT%H%M%SZ") if now is not None else "20261119T000000Z"
+        path = backups_dir / f"investment-{version}-{stamp}.dump"
         path.write_bytes(b"dump")
         self.backup_result = path
         return path

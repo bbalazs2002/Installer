@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import re
 import shutil
 import socket
@@ -25,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .backup import backup_refs, offer_retention
-from .composediff import review_compose
+from .composediff import review_compose, review_new_compose
 from .docker import Docker, DockerError
 from .envconfig import EnvConfigurator
 from .envfile import read_env, update_env_file
@@ -35,7 +36,7 @@ from .github import Asset, GitHub, Release
 from .health import HealthChecker, http_health, is_healthy
 from .lock import FileLock
 from .logging_ import Logger
-from .manifest import Manifest, ManifestError, load_manifest
+from .manifest import BASE_PATH_ENV, Manifest, ManifestError, load_manifest
 from .plan import ConfirmKind, Plan, PlanKind, PlanRequest, build_plan, format_plan
 from .state import (
     DatabaseInfo,
@@ -50,8 +51,21 @@ from .state import (
 )
 from .ui.base import Item, Ui, UiBack
 from .versions import Version
+from .volumebackup import VolumeBackups
+from .volumes import (
+    DATA_DIR_ENV,
+    GID_ENV,
+    UID_ENV,
+    ResolvedVolume,
+    VolumeCheck,
+    check_volumes,
+    describe,
+    parse_compose_config,
+)
 
 GIB = 1024**3
+MIB = 1024**2
+CHECK_PLACEHOLDER_NETWORK = "installer-check"
 CONTRACT_ASSETS = (
     "deploy.json",
     "docker-compose.deploy.yml",
@@ -98,8 +112,13 @@ class DatabaseOps(ABC):
         """Interactively choose a server and create the database and role."""
 
     @abstractmethod
-    def backup(self, info: DatabaseInfo, version: str, backups_dir: Path) -> Path | None:
+    def backup(
+        self, info: DatabaseInfo, version: str, backups_dir: Path, now: datetime | None = None
+    ) -> Path | None:
         """Dump the database; the file name carries ``version`` (the pre-change version).
+
+        ``now`` is the timestamp for the file name, so that a database dump and the volume
+        archives of the same run share it (one backup set); default: the current time.
 
         Returns the file, or ``None`` if the backup failed *and the user explicitly chose to
         continue without one*. A refusal to continue raises :class:`UserAbort`.
@@ -245,6 +264,11 @@ class Layout:
     def compose_env(self) -> Path:
         return self.shared / "compose.env"
 
+    @property
+    def data_dir(self) -> Path:
+        """``${DATA_DIR}``: the only place bind-mounted data may live. Never rotated or removed."""
+        return self.shared / "data"
+
     def release_dir(self, version: str) -> Path:
         return self.releases / version
 
@@ -270,6 +294,7 @@ class InstallResult:
     post_install: tuple[str, ...]
     backup_path: Path | None = None
     notes: tuple[str, ...] = ()
+    volume_backups: tuple[Path, ...] = ()
 
 
 @dataclass
@@ -288,10 +313,39 @@ class _Run:
     backup_path: Path | None = None
     auto_delete_backups: bool = False
     notes: list[str] = field(default_factory=list)
+    # The new release's data volumes, resolved from its compose file (checked at review time).
+    volumes: tuple[ResolvedVolume, ...] = ()
+    # Archives made before the change: the installed release's volume and its archive.
+    volume_backups: list[tuple[ResolvedVolume, Path]] = field(default_factory=list)
+    # Set while the installed application is stopped for a consistent volume backup.
+    stopped: tuple[str, Path] | None = None  # (project, compose file) to start again
 
     @property
     def image_ref(self) -> str:
         return f"{self.manifest.image_name}:{self.version.image_tag}"
+
+
+@dataclass(frozen=True)
+class InstalledData:
+    """The data of an installed application: database and resolved volumes."""
+
+    info: InstallInfo
+    manifest: Manifest
+    layout: Layout
+    volumes: tuple[ResolvedVolume, ...]
+    image: str
+
+    @property
+    def compose_file(self) -> Path:
+        return self.layout.release_dir(self.info.version) / self.manifest.compose_file
+
+
+@dataclass(frozen=True)
+class RestoreChoice:
+    """What to restore: a database dump and/or volume archives (volume name -> file)."""
+
+    dump: Path | None = None
+    volumes: tuple[tuple[str, Path], ...] = ()
 
 
 # --------------------------------------------------------------------------- the installer
@@ -362,6 +416,15 @@ class Installer:
                     f"Not enough free space ({label}): {free // 2**20} MB free, "
                     f"{needed // 2**20} MB needed."
                 )
+        if kind is not PlanKind.NEW:
+            need = self._volume_backup_bytes(target)
+            if need:
+                free = self.d.disk_free(target)
+                if free < need + 64 * MIB:
+                    problems.append(
+                        f"Not enough free space for the volume backups (the target directory): "
+                        f"{free // MIB} MB free, about {need // MIB + 64} MB needed."
+                    )
         if kind is PlanKind.NEW and self.d.port_in_use(port):
             problems.append(f"Port {port} is in use. Choose another port.")
         if meta.manifest.database is not None and kind is PlanKind.NEW:
@@ -372,6 +435,19 @@ class Installer:
             else:
                 problems += self.d.db.precheck(meta.manifest)
         return problems
+
+    def _volume_backup_bytes(self, target: Path) -> int:
+        """The size of the installed volumes that will be archived (0 if unknown or none)."""
+        try:
+            data = self.installed_data(target)
+        except InstallerError:
+            return 0
+        helper = VolumeBackups(self.d.docker, self.d.ui, self.d.log)
+        total = 0
+        for volume in data.volumes:
+            if volume.spec.backup:
+                total += helper.size_bytes(volume, data.image) or 0
+        return total
 
     def confirm_plan(self, plan: Plan) -> None:
         """Ask the confirmation the plan requires; raise :class:`UserAbort` if declined."""
@@ -429,10 +505,14 @@ class Installer:
 
         staging = self._stage(job, layout, version)
         self._review_compose(run, staging)
-        self._configure_env(run)
-        self._database_step(run)
-        self._load_image(run, staging)
-        release_dir = self._activate(run, staging)
+        try:
+            self._configure_env(run)
+            self._database_step(run)
+            self._load_image(run, staging)
+            release_dir = self._activate(run, staging)
+        except BaseException:
+            self._start_stopped_again(run)
+            raise
         return self._start_and_finalize(run, release_dir)
 
     def _stage(self, job: InstallJob, layout: Layout, version: Version) -> Path:
@@ -476,7 +556,10 @@ class Installer:
                 "The release's docker-compose file contains `build:`, which the contract forbids "
                 "(only prebuilt images may be used)."
             )
+        check = self._check_volumes(run, staging)
+        run.volumes = check.resolved
         if old_text is None:
+            self._review_new_compose(run, new_text, check)
             return
         if review.identical:
             self.d.ui.message("The docker-compose file did not change.", title="Compose review")
@@ -488,6 +571,78 @@ class Installer:
             title="Compose review",
         ):
             raise UserAbort("The user rejected the changes to the compose file.")
+
+    def _check_volumes(self, run: _Run, staging: Path) -> VolumeCheck:
+        """Check the volumes of the staged compose file against ``deploy.json`` (blockers raise).
+
+        ``docker compose config`` needs the variables of ``compose.env`` and the ``env_file``,
+        none of which exist yet for the new release, so a throw-away set is written into the
+        staging directory (and removed again).
+        """
+        manifest, layout = run.manifest, run.layout
+        compose_file = staging / manifest.compose_file
+        check_env = staging / ".check.env"
+        dummy_env = staging / ".env.production"
+        made_dummy = not dummy_env.exists()
+        try:
+            update_env_file(
+                check_env,
+                {
+                    "APP_VERSION": run.version.image_tag,
+                    manifest.port_env: str(run.port),
+                    "DB_NETWORK": CHECK_PLACEHOLDER_NETWORK,
+                    **self._data_env(layout),
+                },
+            )
+            if made_dummy:
+                dummy_env.write_text("", encoding="utf-8")
+            try:
+                config = self.d.docker.compose_config(
+                    manifest.project_name, compose_file, check_env
+                )
+            except DockerError as exc:
+                raise ReleaseError(f"The release's compose file is not usable: {exc}") from exc
+        finally:
+            check_env.unlink(missing_ok=True)
+            if made_dummy:
+                dummy_env.unlink(missing_ok=True)
+        try:
+            model = parse_compose_config(config)
+        except ValueError as exc:
+            raise ReleaseError(f"The compose configuration cannot be understood: {exc}") from exc
+        check = check_volumes(
+            model, manifest.volumes, project=manifest.project_name, data_dir=str(layout.data_dir)
+        )
+        if check.problems:
+            raise ReleaseError(
+                "The release's volumes do not meet the contract:\n  - "
+                + "\n  - ".join(check.problems)
+            )
+        return check
+
+    def _review_new_compose(self, run: _Run, new_text: str, check: VolumeCheck) -> None:
+        """A new installation has no old file to compare with: show what matters, ask once."""
+        lines: list[str] = []
+        if run.volumes:
+            lines.append("This application stores data outside its image:")
+            lines += [f"  {describe(v.spec)}" for v in run.volumes]
+            lines.append(
+                "The data of every volume marked 'backed up' is archived before each update."
+            )
+        if check.anonymous:
+            lines.append("")
+            lines.append("Unnamed volumes (NOT backed up, lost when the container is recreated):")
+            lines += [f"  {m.service}: {m.target}" for m in check.anonymous]
+        review = review_new_compose(new_text)
+        if review.flagged:
+            lines += ["", "Settings in the compose file that deserve a look (marked !!):"]
+            lines += [f"  !! {line}" for line in review.flagged]
+        if not lines:
+            return
+        self.d.ui.message("\n".join(lines), title="Compose review", scroll=True)
+        self.d.log.info("New installation compose review:\n" + "\n".join(lines))
+        if not self.d.ui.confirm("Continue with these settings?", title="Compose review"):
+            raise UserAbort("The user rejected the compose file.")
 
     def _previous_names(self, run: _Run) -> set[str]:
         """Variable names the currently installed release declared (for removal detection)."""
@@ -514,36 +669,127 @@ class Installer:
         )
 
     def _database_step(self, run: _Run) -> None:
+        """Create the database (new installation) or back up the data before a change."""
         manifest = run.manifest
-        if manifest.database is None:
-            return
-        if self.d.db is None:
-            raise InstallerError(
-                "The application needs a database, but no database support is set up."
-            )
-        if run.kind is PlanKind.NEW:
-            setup = self.d.db.create(manifest)
-            update_env_file(run.layout.env_file, setup.env)
-            run.db_info = setup.info
-            return
-        assert run.prior is not None
-        run.db_info = run.prior.database
-        if run.prior.database is None:
-            raise InstallerError("The installation record is missing the database details.")
-        self._backup_database(run, run.prior)
+        if manifest.database is not None:
+            if self.d.db is None:
+                raise InstallerError(
+                    "The application needs a database, but no database support is set up."
+                )
+            if run.kind is PlanKind.NEW:
+                setup = self.d.db.create(manifest)
+                update_env_file(run.layout.env_file, setup.env)
+                run.db_info = setup.info
+                return
+            assert run.prior is not None
+            run.db_info = run.prior.database
+            if run.prior.database is None:
+                raise InstallerError("The installation record is missing the database details.")
+        if run.kind is not PlanKind.NEW and run.prior is not None:
+            self._backup_data(run, run.prior)
 
-    def _backup_database(self, run: _Run, prior: InstallInfo) -> None:
-        """Back up before changing anything, then offer to clean up old backups (7.3, 7.5)."""
-        assert self.d.db is not None and prior.database is not None
-        run.backup_path = self.d.db.backup(prior.database, prior.version, run.layout.backups)
+    def _backup_data(self, run: _Run, prior: InstallInfo) -> None:
+        """Back up the database and the data volumes of the installed release before changing
+        anything (one backup set: shared time stamp and version), then offer to clean up old
+        backups (7.3, 7.5)."""
+        d = self.d
+        now = d.clock()
+        database = prior.database if run.manifest.database is not None else None
+        if database is not None:
+            assert d.db is not None
+            run.backup_path = d.db.backup(database, prior.version, run.layout.backups, now)
+        volumes = self._backup_volumes(run, prior, now)
+        if database is None and not volumes:
+            return
         run.auto_delete_backups = offer_retention(
-            self.d.ui,
-            self.d.log,
+            d.ui,
+            d.log,
             run.layout.backups,
             auto_delete=prior.auto_delete_old_backups,
-            now=self.d.clock(),
-            database=prior.database.name,
+            now=now,
+            database=database.name if database is not None else None,
         )
+
+    def installed_data(self, target: Path) -> InstalledData:
+        """The installed release's descriptor and its volumes resolved through ``compose config``.
+
+        Raises :class:`InstallerError` if nothing is installed or the descriptor is unreadable.
+        A volume that the compose file no longer mounts is simply absent from the result.
+        """
+        info = load_install_info(target)
+        if info is None:
+            raise InstallerError("There is no installation in the target directory.")
+        layout = Layout(target)
+        release_dir = layout.release_dir(info.version)
+        try:
+            manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
+        except (OSError, ManifestError) as exc:
+            raise InstallerError(
+                f"The installed release's descriptor is unreadable: {exc}"
+            ) from exc
+        image = f"{manifest.image_name}:{Version.parse(info.version).image_tag}"
+        volumes: tuple[ResolvedVolume, ...] = ()
+        if manifest.volumes:
+            try:
+                config = self.d.docker.compose_config(
+                    manifest.project_name, release_dir / manifest.compose_file, layout.compose_env
+                )
+                model = parse_compose_config(config)
+            except (DockerError, ValueError) as exc:
+                self.d.log.warning(
+                    f"The volumes of the installed release cannot be resolved: {exc}"
+                )
+            else:
+                volumes = check_volumes(
+                    model,
+                    manifest.volumes,
+                    project=manifest.project_name,
+                    data_dir=str(layout.data_dir),
+                ).resolved
+        return InstalledData(info, manifest, layout, volumes, image)
+
+    def _backup_volumes(
+        self, run: _Run, prior: InstallInfo, now: datetime
+    ) -> list[tuple[ResolvedVolume, Path]]:
+        """Archive the installed release's volumes, with the application stopped meanwhile."""
+        try:
+            data = self.installed_data(run.layout.root)
+        except InstallerError as exc:
+            self.d.log.warning(f"The volumes cannot be backed up: {exc}")
+            return []
+        wanted = [v for v in data.volumes if v.spec.backup]
+        if not wanted:
+            return []
+        self._stop_for_backup(run, data)
+        run.volume_backups = VolumeBackups(self.d.docker, self.d.ui, self.d.log).backup_all(
+            wanted, data.image, prior.version, run.layout.backups, now
+        )
+        return run.volume_backups
+
+    def _stop_for_backup(self, run: _Run, data: InstalledData) -> None:
+        """Stop the installed application so the volume contents do not change while copied."""
+        try:
+            self.d.docker.compose_stop(
+                data.manifest.project_name, data.compose_file, data.layout.compose_env
+            )
+        except DockerError as exc:
+            self.d.log.warning(f"Stopping the application for the backup failed: {exc}")
+            return
+        run.stopped = (data.manifest.project_name, data.compose_file)
+        self.d.log.info("The application was stopped for the volume backup.")
+
+    def _start_stopped_again(self, run: _Run) -> None:
+        """After an abort: start the application that was stopped only for the backup."""
+        if run.stopped is None:
+            return
+        project, compose_file = run.stopped
+        run.stopped = None
+        try:
+            self.d.docker.compose_up(project, compose_file, run.layout.compose_env)
+        except DockerError as exc:
+            self.d.log.error(f"Starting the application again failed: {exc}")
+            return
+        self.d.log.info("The application was started again.")
 
     def _load_image(self, run: _Run, staging: Path) -> None:
         docker = self.d.docker
@@ -566,10 +812,33 @@ class Installer:
         values = {"APP_VERSION": version.image_tag, manifest.port_env: str(port)}
         if db is not None:
             values["DB_NETWORK"] = db.network
+        if manifest.volumes:
+            values.update(self._data_env(layout))
         update_env_file(layout.compose_env, values)
+
+    @staticmethod
+    def _data_env(layout: Layout) -> dict[str, str]:
+        """``DATA_DIR`` and the installer user's ids, for the compose file to use."""
+        values = {DATA_DIR_ENV: str(layout.data_dir)}
+        if hasattr(os, "getuid"):
+            values[UID_ENV] = str(os.getuid())
+            values[GID_ENV] = str(os.getgid())
+        return values
+
+    @staticmethod
+    def _prepare_data_dirs(layout: Layout, manifest: Manifest) -> None:
+        """Create ``shared/data`` and the directory of every bind volume (owned by the
+        installer's user), so Docker does not create them as root."""
+        if not any(v.is_bind for v in manifest.volumes):
+            return
+        layout.data_dir.mkdir(mode=0o750, parents=True, exist_ok=True)
+        for volume in manifest.volumes:
+            if volume.is_bind and volume.host_path is not None:
+                (layout.data_dir / volume.host_path).mkdir(mode=0o750, parents=True, exist_ok=True)
 
     def _activate(self, run: _Run, staging: Path) -> Path:
         layout = run.layout
+        self._prepare_data_dirs(layout, run.manifest)
         release_dir = layout.release_dir(run.version.image_tag)
         if release_dir.exists():
             shutil.rmtree(release_dir)
@@ -588,6 +857,7 @@ class Installer:
 
     def _up_and_wait(self, run: _Run, release_dir: Path) -> str | None:
         """Start the release and wait for health. Returns a problem text, or ``None``."""
+        run.stopped = None  # starting the new release replaces the stopped containers
         manifest = run.manifest
         compose_file = release_dir / manifest.compose_file
         try:
@@ -650,7 +920,7 @@ class Installer:
             scroll=True,
         )
 
-        items, can_restore_db = self._recovery_items(run)
+        items, can_restore_data = self._recovery_items(run)
         try:
             choice = d.ui.menu(
                 "What now?",
@@ -661,7 +931,7 @@ class Installer:
             choice = "keep"
 
         if choice in ("rollback", "rollback_restore"):
-            self._rollback(run, restore_db=choice == "rollback_restore" and can_restore_db)
+            self._rollback(run, restore_data=choice == "rollback_restore" and can_restore_data)
         if choice == "stop":
             try:
                 d.docker.compose_stop(manifest.project_name, compose_file, layout.compose_env)
@@ -678,7 +948,7 @@ class Installer:
     def _recovery_items(self, run: _Run) -> tuple[list[Item], bool]:
         prior = run.prior
         items: list[Item] = []
-        can_restore_db = False
+        can_restore_data = False
         if prior is not None and prior.version != str(run.version):
             previous_dir = run.layout.release_dir(prior.version)
             previous_image = f"{run.manifest.image_name}:{Version.parse(prior.version).image_tag}"
@@ -688,24 +958,27 @@ class Installer:
                 migrated = run.manifest.database is not None and not set(run.migrations) <= set(
                     prior.migrations
                 )
+                db_backup = run.backup_path is not None and self.d.db is not None
+                volume_backup = bool(run.volume_backups)
                 if not migrated:
                     items.append(
                         Item("rollback", f"Roll back to the previous release ({prior.version})")
                     )
-                elif run.backup_path is not None and self.d.db is not None:
-                    can_restore_db = True
+                if (migrated and db_backup) or (not migrated and volume_backup):
+                    can_restore_data = True
                     items.append(
                         Item(
                             "rollback_restore",
-                            f"Previous release ({prior.version}) + restore the database from the backup",
+                            f"Previous release ({prior.version}) + restore the data "
+                            "(database, volumes) from the backup",
                         )
                     )
         items.append(Item("keep", "Keep the failure for inspection"))
         if run.prior is None:
             items.append(Item("stop", "Stop the container"))
-        return items, can_restore_db
+        return items, can_restore_data
 
-    def _rollback(self, run: _Run, *, restore_db: bool) -> None:
+    def _rollback(self, run: _Run, *, restore_data: bool) -> None:
         d, layout = self.d, run.layout
         prior = run.prior
         assert prior is not None
@@ -724,9 +997,17 @@ class Installer:
             )
         except DockerError as exc:
             d.log.warning(f"Stopping the new release failed: {exc}")
-        if restore_db:
-            assert prior.database is not None and run.backup_path is not None and d.db is not None
-            d.db.restore(prior.database, run.backup_path)
+        if restore_data:
+            if run.backup_path is not None and prior.database is not None and d.db is not None:
+                d.db.restore(prior.database, run.backup_path)
+            if run.volume_backups:
+                VolumeBackups(d.docker, d.ui, d.log).restore_all(
+                    run.volume_backups,
+                    f"{prior_manifest.image_name}:{prior_version.image_tag}",
+                    app_name=prior_manifest.name,
+                    backups_dir=layout.backups,
+                    now=d.clock(),
+                )
         self._write_compose_env(
             layout, prior_manifest, prior_version, prior.port or run.port, prior.database
         )
@@ -786,10 +1067,13 @@ class Installer:
         return InstallResult(
             version=str(run.version),
             port=run.port,
-            proxy_snippet=manifest.proxy_snippet_for(run.port),
+            proxy_snippet=manifest.proxy_snippet_for(
+                run.port, read_env(layout.env_file).get(BASE_PATH_ENV)
+            ),
             post_install=manifest.post_install,
             backup_path=run.backup_path,
             notes=tuple(run.notes),
+            volume_backups=tuple(path for _, path in run.volume_backups),
         )
 
     def _cleanup(self, run: _Run, info: InstallInfo) -> None:
@@ -825,28 +1109,108 @@ class Installer:
         Nothing is rolled back: the same release is simply started again.
         """
         with FileLock(self._lock_path()):
-            info = load_install_info(target)
-            if info is None:
-                raise InstallerError("There is no installation in the target directory.")
-            layout = Layout(target)
-            release_dir = layout.release_dir(info.version)
-            try:
-                manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
-            except (OSError, ManifestError) as exc:
-                raise InstallerError(
-                    f"The installed release's descriptor is unreadable: {exc}"
-                ) from exc
-            compose_file = release_dir / manifest.compose_file
-            try:
-                self.d.docker.compose_up(
-                    manifest.project_name, compose_file, layout.compose_env, force_recreate=True
-                )
-            except DockerError as exc:
-                return str(exc)
-            port = info.port or manifest.port_default
-            return self._wait_healthy(
-                manifest, Version.parse(info.version), port, compose_file, layout
+            return self._restart_locked(target, force_recreate=True)
+
+    def _restart_locked(self, target: Path, *, force_recreate: bool) -> str | None:
+        info = load_install_info(target)
+        if info is None:
+            raise InstallerError("There is no installation in the target directory.")
+        layout = Layout(target)
+        release_dir = layout.release_dir(info.version)
+        try:
+            manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
+        except (OSError, ManifestError) as exc:
+            raise InstallerError(
+                f"The installed release's descriptor is unreadable: {exc}"
+            ) from exc
+        compose_file = release_dir / manifest.compose_file
+        try:
+            self.d.docker.compose_up(
+                manifest.project_name,
+                compose_file,
+                layout.compose_env,
+                force_recreate=force_recreate,
             )
+        except DockerError as exc:
+            return str(exc)
+        port = info.port or manifest.port_default
+        return self._wait_healthy(manifest, Version.parse(info.version), port, compose_file, layout)
+
+    # ------------------------------------------------------------- data backup / restore
+
+    def backup_now(
+        self, target: Path, *, stop_app: bool
+    ) -> tuple[Path | None, list[Path], str | None]:
+        """A manual backup of the database and the volumes (one backup set).
+
+        With ``stop_app`` the application is stopped while the volumes are copied (consistent)
+        and started again afterwards. Returns ``(dump, volume archives, start problem)``.
+        """
+        d = self.d
+        with FileLock(self._lock_path()):
+            data = self.installed_data(target)
+            now = d.clock()
+            dump: Path | None = None
+            if data.info.database is not None:
+                if d.db is None:
+                    raise InstallerError("A database backup needs database support.")
+                dump = d.db.backup(data.info.database, data.info.version, data.layout.backups, now)
+            wanted = [v for v in data.volumes if v.spec.backup]
+            stopped = False
+            if wanted and stop_app:
+                try:
+                    d.docker.compose_stop(
+                        data.manifest.project_name, data.compose_file, data.layout.compose_env
+                    )
+                    stopped = True
+                except DockerError as exc:
+                    d.log.warning(f"Stopping the application for the backup failed: {exc}")
+            try:
+                made = VolumeBackups(d.docker, d.ui, d.log).backup_all(
+                    wanted, data.image, data.info.version, data.layout.backups, now
+                )
+            finally:
+                problem = self._restart_locked(target, force_recreate=False) if stopped else None
+        return dump, [path for _, path in made], problem
+
+    def restore_data(self, target: Path, choice: RestoreChoice) -> str | None:
+        """Restore a database dump and/or volume archives, then start the application again.
+
+        Every part asks for its own typed confirmation and makes a safety copy first. Returns
+        ``None`` if the application is healthy afterwards, else a problem description.
+        """
+        d = self.d
+        with FileLock(self._lock_path()):
+            data = self.installed_data(target)
+
+            def stop_application() -> None:
+                try:
+                    d.docker.compose_stop(
+                        data.manifest.project_name, data.compose_file, data.layout.compose_env
+                    )
+                except DockerError as exc:
+                    raise InstallerError(f"Stopping the application failed: {exc}") from exc
+
+            if choice.dump is not None:
+                if d.db is None or data.info.database is None:
+                    raise InstallerError("This installation has no database to restore.")
+                d.db.restore(data.info.database, choice.dump, prepare=stop_application)
+            if choice.volumes:
+                by_name = {v.name: v for v in data.volumes}
+                missing = [name for name, _ in choice.volumes if name not in by_name]
+                if missing:
+                    raise InstallerError(
+                        "The installed release does not use the volume(s): " + ", ".join(missing)
+                    )
+                VolumeBackups(d.docker, d.ui, d.log).restore_all(
+                    [(by_name[name], path) for name, path in choice.volumes],
+                    data.image,
+                    app_name=data.manifest.name,
+                    backups_dir=data.layout.backups,
+                    now=d.clock(),
+                    prepare=stop_application,
+                )
+            return self._restart_locked(target, force_recreate=True)
 
     # -------------------------------------------------------------- rollback (5.4)
 
@@ -943,13 +1307,14 @@ class Installer:
             db_info=info.database,
             auto_delete_backups=info.auto_delete_old_backups,
         )
-        if manifest.database is not None:
-            if d.db is None or info.database is None:
-                raise InstallerError(
-                    "A database backup needs database support, which is not set up."
-                )
-            self._backup_database(run, info)
-        self._write_compose_env(layout, manifest, version, port, info.database)
+        if manifest.database is not None and (d.db is None or info.database is None):
+            raise InstallerError("A database backup needs database support, which is not set up.")
+        try:
+            self._backup_data(run, info)
+            self._write_compose_env(layout, manifest, version, port, info.database)
+        except BaseException:
+            self._start_stopped_again(run)
+            raise
         return self._start_and_finalize(run, release_dir)
 
     # ------------------------------------------------------------------ downloading

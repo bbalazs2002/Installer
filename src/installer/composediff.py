@@ -51,6 +51,12 @@ _EXPOSED_PORT_RE = re.compile(
     + r"){1,2}(?:/\w+)?[\"']?\s*$"
 )
 _BUILD_KEY_RE = re.compile(r"^\s*(?:-\s*)?build\s*:")
+# ``user: ${APP_UID}:${APP_GID}`` is the contract's way to run as the installer's user, so the
+# files in a bind-mounted data directory stay reachable for it: not a risky change.
+_APP_USER_RE = re.compile(r"^\s*user\s*:\s*[\"']?\$\{APP_UID\}(?::\$\{APP_GID\})?[\"']?\s*$")
+# On a new installation the whole file is "added"; these bare headers say nothing by themselves
+# (the volumes are checked structurally, the port mapping is shown by the exposed-port rule).
+_BARE_HEADER_RE = re.compile(r"^\s*(?:ports|volumes)\s*:\s*$")
 FLAG = "!!"
 
 
@@ -95,9 +101,29 @@ def review_compose(old: str | None, new: str) -> ComposeReview:
     for line in lines:
         if line.startswith("+") and not line.startswith("+++"):
             content = line[1:]
+            if _APP_USER_RE.match(content):
+                out.append(line)
+                continue
             if _RISKY_RE.search(content) or _EXPOSED_PORT_RE.match(content):
                 out.append(f"{FLAG} {line}")
                 flagged.append(content.strip())
                 continue
         out.append(line)
     return ComposeReview("\n".join(out), tuple(flagged), build)
+
+
+def review_new_compose(new: str) -> ComposeReview:
+    """The review of a compose file that has no predecessor (a new installation).
+
+    Everything counts as added, so risky lines are flagged too; the bare ``ports:`` and
+    ``volumes:`` headers alone are not (they are always there and say nothing).
+    """
+    review = review_compose("", new)
+    flagged = tuple(line for line in review.flagged if _BARE_HEADER_RE.match(line) is None)
+    kept = []
+    for line in review.diff.splitlines():
+        if line.startswith(FLAG + " +") and _BARE_HEADER_RE.match(line[len(FLAG) + 2 :]):
+            kept.append(line[len(FLAG) + 1 :])  # drop the marker again
+        else:
+            kept.append(line)
+    return ComposeReview("\n".join(kept), flagged, review.build_present)

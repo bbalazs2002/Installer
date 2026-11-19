@@ -19,8 +19,11 @@ link behind (see [Upgrading from 0.1.x](#upgrading-from-01x)).
 - **On failure, recovery only with confirmation** (it never rolls back on its own).
 - **Available updates** list (also checked when the menu opens).
 - **A `.env.production` wizard**, secret generation, an encrypted **vault**, secret rotation.
-- **Database** in a shared Postgres: creation (SCRAM), a backup before every update, restore,
-  and deletion of backups older than a year.
+- **Database** in a shared Postgres: creation (SCRAM), a backup before every update, restore.
+- **Data volumes** (named volumes and bind mounts outside the image): every volume is archived
+  (`.tar.gz`) together with the database dump before each update, can be restored, and the
+  archives expire with the dumps. Backups older than a year are deleted, but the newest backup of
+  the database and of each volume is always kept.
 - **Self-update** (replacing `installer.pyz` with verification).
 
 What it does not do: update the operating system, change Apache or systemd (it only prints the
@@ -127,7 +130,7 @@ Installer — main menu
  Available updates
  Passwords and .env
  Roll back to a previous version
- Database (backup, restore, delete backups)
+ Backups (database and volumes: back up, restore, delete old)
  Status
  Logs
  Settings (GitHub token, known repositories)
@@ -167,8 +170,10 @@ Exit codes: `0` success, `1` failure, `2` cancelled by the user, `3` a prerequis
   releases/<version>/              the release (compose, deploy.json, .env.production -> ../../shared/...)
   current -> releases/<version>    atomic switch
   shared/.env.production           600  the application's runtime environment (with secrets)
-  shared/compose.env               600  compose variables (APP_VERSION, PORT, DB_NETWORK)
-  backups/<db>-<version>-<time>.dump  600  database backups
+  shared/compose.env               600  compose variables (APP_VERSION, PORT, DB_NETWORK, DATA_DIR)
+  shared/data/<directory>/         bind-mounted application data (never rotated or removed)
+  backups/<db>-<version>-<time>.dump          600  database backups
+  backups/<volume>-<version>-<time>.tar.gz    600  data volume backups (same time as the dump)
   .install.json                    installation record (no passwords)
 ```
 
@@ -186,8 +191,13 @@ Exit codes: `0` success, `1` failure, `2` cancelled by the user, `3` a prerequis
   HMAC (encrypt-then-MAC); the master password is stored nowhere. **If you forget it, the vault
   cannot be recovered.**
 - **No root:** the installer never calls `sudo`, and refuses to start as root.
-- **Recovery only with confirmation**; a database restore needs the database name typed in, and a
-  backup of the current state is always made first.
+- **Recovery only with confirmation**; a database restore needs the database name typed in, a
+  volume restore the application name, and a backup of the current state is always made first.
+- **Data is never deleted by the installer:** no `down -v`, no `docker volume rm`, no prune; the
+  release rotation removes only release directories and images. The one deletion inside a volume
+  is emptying it during a restore you confirmed. Compose files may mount only the declared named
+  volumes and directories below the installer's data directory (not `docker.sock`, not other
+  host paths).
 
 ## Making a project installable
 
