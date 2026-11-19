@@ -65,13 +65,15 @@ class FakeDb(DatabaseOps):
             if self.proceed_without_backup:
                 return None
             raise UserAbort("Mentés nélkül a művelet megáll.")
-        path = backups_dir / f"investment-{version}-20261119.dump"
+        path = backups_dir / f"investment-{version}-20261119T000000Z.dump"
         path.write_bytes(b"dump")
         self.backup_result = path
         return path
 
-    def restore(self, info: DatabaseInfo, backup: Path) -> None:
+    def restore(self, info: DatabaseInfo, backup: Path, prepare: Any = None) -> None:
         self.calls.append(f"restore:{backup.name}")
+        if prepare is not None:
+            prepare()
 
     def rotate_password(self, manifest: Manifest, info: DatabaseInfo, env_path: Path) -> None:
         self.calls.append("rotate")

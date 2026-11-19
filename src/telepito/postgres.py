@@ -568,7 +568,9 @@ class PostgresOps(DatabaseOps):
 
     # ----------------------------------------------------------------------- restore
 
-    def restore(self, info: DatabaseInfo, backup: Path) -> None:
+    def restore(
+        self, info: DatabaseInfo, backup: Path, prepare: Callable[[], None] | None = None
+    ) -> None:
         """Replace the database with ``backup``. Needs the database name typed in full."""
         ui = self._ui
         typed = ui.text(
@@ -581,6 +583,8 @@ class PostgresOps(DatabaseOps):
 
         # A safety net first: the current state, so the restore itself can be undone.
         self.backup(info, PRE_RESTORE, backup.parent)
+        if prepare is not None:
+            prepare()
 
         client = PsqlClient(self._docker, info.container, info.admin_user)
         q_db, q_user = quote_ident(info.name), quote_ident(info.user)

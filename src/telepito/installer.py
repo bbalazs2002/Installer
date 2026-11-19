@@ -106,8 +106,14 @@ class DatabaseOps(ABC):
         """
 
     @abstractmethod
-    def restore(self, info: DatabaseInfo, backup: Path) -> None:
-        """Restore a dump. Implementations ask for a strong confirmation themselves."""
+    def restore(
+        self, info: DatabaseInfo, backup: Path, prepare: Callable[[], None] | None = None
+    ) -> None:
+        """Restore a dump. Implementations ask for a strong confirmation themselves.
+
+        ``prepare`` (e.g. "stop the application") runs after the confirmation and the safety
+        copy, immediately before the first destructive step.
+        """
 
     @abstractmethod
     def rotate_password(self, manifest: Manifest, info: DatabaseInfo, env_path: Path) -> None:

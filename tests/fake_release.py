@@ -119,11 +119,12 @@ class MemoryGitHub(GitHub):
         return TokenStatus(None)
 
     def list_releases(self, repo: str) -> list[Release]:
-        return list(self._releases)
+        """Newest first, like the real client."""
+        return sorted(self._releases, key=lambda r: r.version, reverse=True)  # type: ignore[arg-type, return-value]
 
     def latest_stable(self, repo: str) -> Release | None:
-        stable = [r for r in self._releases if not r.prerelease]
-        return stable[-1] if stable else None
+        stable = [r for r in self.list_releases(repo) if not r.prerelease]
+        return stable[0] if stable else None
 
     def download_asset(
         self,
