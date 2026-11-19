@@ -788,6 +788,36 @@ class Installer:
             except DockerError as exc:
                 log.warning(f"A(z) {ref} kép törlése nem sikerült: {exc}")
 
+    # ---------------------------------------------------------------------- restart
+
+    def restart(self, target: Path) -> str | None:
+        """Recreate the containers of the installed release (e.g. after rotating a secret).
+
+        Returns ``None`` if the application is healthy again, else a problem description.
+        Nothing is rolled back: the same release is simply started again.
+        """
+        with FileLock(self._lock_path()):
+            info = load_install_info(target)
+            if info is None:
+                raise TelepitoError("A célmappában nincs telepítés.")
+            layout = Layout(target)
+            release_dir = layout.release_dir(info.version)
+            try:
+                manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
+            except (OSError, ManifestError) as exc:
+                raise TelepitoError(f"A telepített kiadás leírója nem olvasható: {exc}") from exc
+            compose_file = release_dir / manifest.compose_file
+            try:
+                self.d.docker.compose_up(
+                    manifest.project_name, compose_file, layout.compose_env, force_recreate=True
+                )
+            except DockerError as exc:
+                return str(exc)
+            port = info.port or manifest.port_default
+            return self._wait_healthy(
+                manifest, Version.parse(info.version), port, compose_file, layout
+            )
+
     # -------------------------------------------------------------- rollback (5.4)
 
     def previous_versions(self, target: Path) -> list[str]:

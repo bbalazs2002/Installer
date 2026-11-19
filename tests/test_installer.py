@@ -593,6 +593,33 @@ class RollbackToTests(InstallerTestCase):
         self.assertIn("nem végezhető el", str(ctx.exception))
 
 
+class RestartTests(InstallerTestCase):
+    def test_restart_recreates_and_checks_health(self) -> None:
+        self.install("0.1.0")
+        self.docker.calls.clear()
+        self.assertIsNone(self.installer.restart(self.target))
+        (name, args) = next(c for c in self.docker.calls if c[0] == "compose_up")
+        self.assertEqual(args[0], "investment")
+        self.assertTrue(args[3])  # force_recreate
+
+    def test_restart_reports_an_unhealthy_application(self) -> None:
+        self.install("0.1.0")
+        self.healthy_version = None
+        self.docker.on_up = None
+        problem = self.installer.restart(self.target)
+        assert problem is not None
+        self.assertIn("időtúllépés", problem)
+
+    def test_restart_reports_docker_failure(self) -> None:
+        self.install("0.1.0")
+        self.docker.fail.add("compose_up")
+        self.assertIn("fake compose_up", self.installer.restart(self.target) or "")
+
+    def test_restart_without_installation(self) -> None:
+        with self.assertRaises(TelepitoError):
+            self.installer.restart(self.target)
+
+
 class DockerErrorTests(InstallerTestCase):
     def test_load_failure_propagates_and_changes_nothing(self) -> None:
         _, release = self.publish("0.1.0")
