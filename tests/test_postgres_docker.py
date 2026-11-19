@@ -1,4 +1,4 @@
-"""Real PostgreSQL tests against throw-away containers (specification 11, "Valódi Docker tesztek").
+"""Real PostgreSQL tests against throw-away containers (specification 11, "real Docker tests").
 
 For each of ``postgres:17-alpine`` and ``postgres:15-alpine`` a private container on a private
 network is started and removed again; containers the machine already runs are never touched.
@@ -62,7 +62,7 @@ MANIFEST = parse_manifest(
         "health": {"path": "/healthz"},
         "database": {
             "required": True,
-            "description": "Adatbázis kell.",
+            "description": "A database is needed.",
             "urlEnv": "DATABASE_URL",
             "urlTemplate": "postgresql://{user}:{password}@{host}:{port}/{database}",
         },
@@ -83,7 +83,7 @@ class ServerFixture:
         if _run("image", "inspect", self.image).returncode != 0:
             pulled = _run("pull", self.image, timeout=900)
             if pulled.returncode != 0:
-                raise unittest.SkipTest(f"{self.image} nem tölthető le")
+                raise unittest.SkipTest(f"{self.image} cannot be pulled")
         _run("network", "create", self.network)
         started = _run(
             "run", "-d", "--name", self.name, "--network", self.network,
@@ -105,7 +105,7 @@ class ServerFixture:
                 return
             time.sleep(1)
         self.stop()
-        raise RuntimeError("A Postgres nem indult el időben.")
+        raise RuntimeError("Postgres did not start in time.")
 
     def stop(self) -> None:
         _run("rm", "-f", "-v", self.name)

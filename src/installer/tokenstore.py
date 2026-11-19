@@ -31,13 +31,13 @@ class TokenStore:
         except FileNotFoundError:
             return None
         except (OSError, UnicodeDecodeError) as exc:
-            raise TelepitoError(f"A tokenfájl nem olvasható: {exc}") from exc
+            raise TelepitoError(f"The token file cannot be read: {exc}") from exc
         return token or None
 
     def save(self, token: str) -> None:
         token = token.strip()
         if not token or any(ch.isspace() for ch in token):
-            raise TelepitoError("Érvénytelen token.")
+            raise TelepitoError("Invalid token.")
         self._path.parent.mkdir(parents=True, exist_ok=True, mode=_DIR_MODE)
         atomic_write_text(self._path, token + "\n", TOKEN_MODE)
 

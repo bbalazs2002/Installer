@@ -97,14 +97,14 @@ def scram_sha256_verifier(
 
 def quote_ident(name: str) -> str:
     if "\x00" in name or not name:
-        raise PostgresError("Érvénytelen azonosító.")
+        raise PostgresError("Invalid identifier.")
     return '"' + name.replace('"', '""') + '"'
 
 
 def quote_literal(value: str) -> str:
     """A string literal. Callers also ``SET standard_conforming_strings = on`` first."""
     if "\x00" in value:
-        raise PostgresError("Érvénytelen érték (NUL karakter).")
+        raise PostgresError("Invalid value (NUL character).")
     return "'" + value.replace("'", "''") + "'"
 
 
@@ -112,11 +112,11 @@ def validate_password(password: str) -> str | None:
     """Passwords are limited to printable ASCII, which also keeps SCRAM and URLs simple."""
     if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
         return (
-            f"A jelszó hossza {MIN_PASSWORD_LENGTH} és {MAX_PASSWORD_LENGTH} karakter "
-            "között legyen."
+            f"The password must be between {MIN_PASSWORD_LENGTH} and {MAX_PASSWORD_LENGTH} characters "
+            "long."
         )
     if not all(0x21 <= ord(c) <= 0x7E for c in password):
-        return "A jelszó csak látható ASCII karaktereket tartalmazhat (szóköz nélkül)."
+        return "The password may contain only visible ASCII characters (no spaces)."
     return None
 
 
@@ -187,54 +187,54 @@ def choose_server(ui: Ui, containers: list[PostgresContainer], description: str)
     """Interactive choice of container, network, host alias and admin user (7.1)."""
     if not containers:
         raise PostgresError(
-            "Nem található futó Postgres-konténer. A telepítéshez adatbázis kell"
+            "No running Postgres container found. The installation needs a database"
             + (f": {description}" if description else ".")
         )
     if len(containers) == 1:
         container = containers[0]
         if not ui.confirm(
-            f"Ezt a Postgres-konténert használod?\n\n  {container.name} ({container.image})",
-            title="Adatbázis-kiszolgáló",
+            f"Use this Postgres container?\n\n  {container.name} ({container.image})",
+            title="Database server",
             default=True,
         ):
-            raise UserAbort("Az adatbázis-kiszolgáló kiválasztása megszakítva.")
+            raise UserAbort("Choosing the database server was cancelled.")
     else:
         preferred = next(
             (c.name for c in containers if PREFERRED_NETWORK in c.networks), containers[0].name
         )
         by_name = {c.name: c for c in containers}
         items = [
-            Item(c.name, f"{c.name} ({c.image})  hálózatok: {', '.join(c.networks) or '-'}")
+            Item(c.name, f"{c.name} ({c.image})  networks: {', '.join(c.networks) or '-'}")
             for c in containers
         ]
-        chosen = ui.choose("Adatbázis-kiszolgáló", items, text=description, default=preferred)
+        chosen = ui.choose("Database server", items, text=description, default=preferred)
         container = by_name[chosen]
 
     networks = list(container.networks)
     if not networks:
-        raise PostgresError(f"A(z) {container.name} konténer egyik hálózaton sincs.")
+        raise PostgresError(f"The container {container.name} is not on any network.")
     if len(networks) == 1:
         network = networks[0]
     else:
         default = PREFERRED_NETWORK if PREFERRED_NETWORK in networks else networks[0]
         network = ui.choose(
-            "Hálózat",
+            "Network",
             [Item(n, n) for n in networks],
-            text="Melyik hálózaton éri el az alkalmazás az adatbázist?",
+            text="Which network does the application use to reach the database?",
             default=default,
         )
     host = ask_validated(
         ui,
-        "Az adatbázis hosztneve az alkalmazás számára (hálózati álnév):",
-        lambda v: None if _HOST_RE.match(v) else "Érvénytelen hosztnév.",
-        title="Adatbázis-kiszolgáló",
+        "The database host name for the application (network alias):",
+        lambda v: None if _HOST_RE.match(v) else "Invalid host name.",
+        title="Database server",
         default=default_host(container, network),
     )
     admin = ask_validated(
         ui,
-        "Az adatbázis adminisztrátor felhasználója (jelszót nem kérünk):",
-        lambda v: None if _ADMIN_RE.match(v) else "Érvénytelen felhasználónév.",
-        title="Adatbázis-kiszolgáló",
+        "The database administrator user (no password is asked for):",
+        lambda v: None if _ADMIN_RE.match(v) else "Invalid user name.",
+        title="Database server",
         default=container.admin_user,
     )
     return ServerChoice(container, network, host, admin)
@@ -274,7 +274,7 @@ class PsqlClient:
         except DockerError as exc:
             raise PostgresError(str(exc)) from exc
         if result.returncode != 0:
-            raise PostgresError(_tail(result.stderr) or "A psql hibával leállt.")
+            raise PostgresError(_tail(result.stderr) or "psql exited with an error.")
         return result
 
     def database_exists(self, name: str) -> bool:
@@ -310,9 +310,7 @@ class PsqlClient:
                 except DockerError:
                     pass
         except PostgresError as exc:
-            raise PostgresError(
-                f"A bejelentkezési próba sikertelen ({user}@{host}/{database}): {exc}"
-            ) from exc
+            raise PostgresError(f"The login test failed ({user}@{host}/{database}): {exc}") from exc
 
 
 def _tail(data: bytes, lines: int = 3) -> str:
@@ -363,7 +361,7 @@ class PostgresOps(DatabaseOps):
         if containers:
             return []
         reason = f": {spec.description}" if spec.description else "."
-        return [f"Nem található futó Postgres-konténer. A telepítéshez adatbázis kell{reason}"]
+        return [f"No running Postgres container found. The installation needs a database{reason}"]
 
     # ------------------------------------------------------------------------ create
 
@@ -372,7 +370,7 @@ class PostgresOps(DatabaseOps):
         assert spec is not None
         ui = self._ui
         if spec.description:
-            ui.message(spec.description, title="Miért kell adatbázis?")
+            ui.message(spec.description, title="Why is a database needed?")
         server = choose_server(ui, find_postgres_containers(self._docker), spec.description)
         client = PsqlClient(self._docker, server.container.name, server.admin_user)
 
@@ -383,10 +381,10 @@ class PostgresOps(DatabaseOps):
         encryption = client.password_encryption()
         if encryption != "scram-sha-256":
             ui.message(
-                f"A kiszolgáló jelszótitkosítása: {encryption or 'ismeretlen'}. A jelszó "
-                "egyszerű szövegként kerül a CREATE ROLE parancsba, ami a kiszolgáló naplójába "
-                "is bekerülhet.",
-                title="Figyelmeztetés",
+                f"The server's password encryption is: {encryption or 'unknown'}. The password "
+                "will be sent as plain text in the CREATE ROLE command, which may end up in "
+                "the server log.",
+                title="Warning",
             )
 
         self._provision(client, encryption, database, user, password, create_role, create_db)
@@ -410,7 +408,7 @@ class PostgresOps(DatabaseOps):
             user=user,
             admin_user=server.admin_user,
         )
-        self._log.info(f"Adatbázis kész: {database} ({user}) a(z) {info.container} konténerben.")
+        self._log.info(f"Database ready: {database} ({user}) in container {info.container}.")
         return DatabaseSetup(info, {spec.url_env: url})
 
     def _decide_names(
@@ -421,16 +419,16 @@ class PostgresOps(DatabaseOps):
         while True:
             database = ask_validated(
                 ui,
-                "Az adatbázis neve:",
+                "The database name:",
                 lambda v: None if is_db_identifier(v) else _IDENT_HELP,
-                title="Adatbázis",
+                title="Database",
                 default=database,
             )
             user = ask_validated(
                 ui,
-                "Az adatbázis felhasználója:",
+                "The database user:",
                 lambda v: None if is_db_identifier(v) else _IDENT_HELP,
-                title="Adatbázis",
+                title="Database",
                 default=user,
             )
             db_exists = client.database_exists(database)
@@ -438,25 +436,25 @@ class PostgresOps(DatabaseOps):
             if not db_exists and not role_exists:
                 return database, user, self._ask_new_password(), True, True
             existing = [
-                *(["adatbázis"] if db_exists else []),
-                *(["felhasználó"] if role_exists else []),
+                *(["database"] if db_exists else []),
+                *(["user"] if role_exists else []),
             ]
             choice = ui.menu(
-                "Már létezik",
+                "Already exists",
                 [
-                    Item("rename", "Másik nevet adok meg"),
-                    Item("use", "A meglévő használata"),
+                    Item("rename", "I will give another name"),
+                    Item("use", "Use the existing one"),
                 ],
-                text=f"Már létezik ilyen {' és '.join(existing)} ({database} / {user}).",
+                text=f"Already exists: {' and '.join(existing)} ({database} / {user}).",
             )
             if choice == "rename":
                 continue
             if role_exists:
                 password = ask_validated(
                     ui,
-                    f"A(z) {user} felhasználó jelszava (ellenőrizzük):",
+                    f"Password of the user {user} (it will be verified):",
                     lambda v: validate_password(v),
-                    title="Adatbázis",
+                    title="Database",
                     secret=True,
                 )
             else:
@@ -466,18 +464,18 @@ class PostgresOps(DatabaseOps):
     def _ask_new_password(self) -> str:
         ui = self._ui
         choice = ui.menu(
-            "Adatbázis-jelszó",
-            [Item("generate", "Generálás (ajánlott)"), Item("manual", "Kézi beírás (rejtett)")],
+            "Database password",
+            [Item("generate", "Generate (recommended)"), Item("manual", "Type it in (hidden)")],
         )
         if choice == "generate":
             return generate_secret(PASSWORD_BYTES)
         while True:
             first = ask_validated(
-                ui, "Jelszó:", lambda v: validate_password(v), title="Adatbázis", secret=True
+                ui, "Password:", lambda v: validate_password(v), title="Database", secret=True
             )
-            if ui.secret("Jelszó még egyszer:", title="Adatbázis") == first:
+            if ui.secret("Password again:", title="Database") == first:
                 return first
-            ui.message("A két jelszó nem egyezik.", title="Adatbázis")
+            ui.message("The two passwords do not match.", title="Database")
 
     def _provision(
         self,
@@ -501,7 +499,7 @@ class PostgresOps(DatabaseOps):
                     try:
                         client.run(f"DROP ROLE IF EXISTS {q_user};")
                     except PostgresError as cleanup:
-                        self._log.warning(f"A felhasználó eltávolítása nem sikerült: {cleanup}")
+                        self._log.warning(f"Removing the user failed: {cleanup}")
                 raise
         client.run(f"GRANT ALL ON SCHEMA public TO {q_user};", database=database)
 
@@ -512,17 +510,17 @@ class PostgresOps(DatabaseOps):
             vault = self._vault_provider()
             if vault is None:
                 self._ui.message(
-                    "Az adatbázis-jelszó nem került jelszótárba; csak a .env.production "
-                    "tartalmazza.",
-                    title="Jelszótár",
+                    "The database password was not saved to the vault; only .env.production "
+                    "contains it.",
+                    title="Vault",
                 )
                 return
             vault.set(installation, VAULT_PASSWORD_NAME, password)
             vault.save()
         except VaultError as exc:
             self._ui.message(
-                f"Az adatbázis-jelszót nem sikerült a jelszótárba menteni ({exc}).",
-                title="Jelszótár",
+                f"Saving the database password to the vault failed ({exc}).",
+                title="Vault",
             )
 
     # ------------------------------------------------------------------------ backup
@@ -544,26 +542,26 @@ class PostgresOps(DatabaseOps):
                 timeout=DUMP_TIMEOUT,
             )
             if dump.returncode != 0:
-                raise PostgresError(_tail(dump.stderr) or "A pg_dump hibával leállt.")
+                raise PostgresError(_tail(dump.stderr) or "pg_dump exited with an error.")
             if path.stat().st_size == 0:
-                raise PostgresError("A mentés üres.")
+                raise PostgresError("The backup is empty.")
             check = self._docker.exec(
                 info.container, ["pg_restore", "--list"], stdin_from=path, timeout=PG_EXEC_TIMEOUT
             )
             if check.returncode != 0:
-                raise PostgresError("A mentés nem olvasható vissza (pg_restore --list).")
+                raise PostgresError("The backup cannot be read back (pg_restore --list).")
         except (PostgresError, DockerError) as exc:
             path.unlink(missing_ok=True)
-            self._log.error(f"Adatbázis-mentés sikertelen: {exc}")
-            self._ui.message(f"Az adatbázis-mentés sikertelen: {exc}", title="Mentés")
+            self._log.error(f"Database backup failed: {exc}")
+            self._ui.message(f"The database backup failed: {exc}", title="Backup")
             if self._ui.confirm(
-                "Folytatod mentés nélkül? (Hiba esetén nem lesz mihez visszaállni.)",
-                title="Mentés",
+                "Continue without a backup? (If something goes wrong there will be nothing to roll back to.)",
+                title="Backup",
                 default=False,
             ):
                 return None
-            raise UserAbort("Mentés nélkül a művelet megáll.") from exc
-        self._log.info(f"Adatbázis-mentés kész: {path.name} ({path.stat().st_size} bájt)")
+            raise UserAbort("Without a backup the operation stops.") from exc
+        self._log.info(f"Database backup done: {path.name} ({path.stat().st_size} bytes)")
         return path
 
     # ----------------------------------------------------------------------- restore
@@ -574,12 +572,12 @@ class PostgresOps(DatabaseOps):
         """Replace the database with ``backup``. Needs the database name typed in full."""
         ui = self._ui
         typed = ui.text(
-            f"A(z) {info.name} adatbázis tartalma FELÜLÍRÓDIK a(z) {backup.name} mentéssel. "
-            f"A folytatáshoz írd be az adatbázis nevét: {info.name}",
-            title="Adatbázis visszatöltése",
+            f"The contents of the database {info.name} will be OVERWRITTEN with the backup {backup.name}. "
+            f"To continue, type the database name: {info.name}",
+            title="Restore the database",
         )
         if typed.strip() != info.name:
-            raise UserAbort("A név nem egyezik; a visszatöltés megszakítva.")
+            raise UserAbort("The name does not match; the restore was cancelled.")
 
         # A safety net first: the current state, so the restore itself can be undone.
         self.backup(info, PRE_RESTORE, backup.parent)
@@ -614,12 +612,12 @@ class PostgresOps(DatabaseOps):
             raise PostgresError(str(exc)) from exc
         if result.returncode != 0:
             raise PostgresError(
-                "A visszatöltés sikertelen: "
-                + (_tail(result.stderr) or "pg_restore hiba")
-                + f". A visszatöltés előtti állapot mentve: {backup.parent}"
+                "The restore failed: "
+                + (_tail(result.stderr) or "pg_restore error")
+                + f". The state before the restore was saved in: {backup.parent}"
             )
         client.run(f"GRANT ALL ON SCHEMA public TO {q_user};", database=info.name)
-        self._log.info(f"Az adatbázis visszatöltve a(z) {backup.name} mentésből.")
+        self._log.info(f"The database was restored from the backup {backup.name}.")
 
     # ----------------------------------------------------------------------- rotation
 
@@ -645,7 +643,9 @@ class PostgresOps(DatabaseOps):
         )
         self._log.redactor.register(url)
         update_env_file(env_path, {spec.url_env: url})
-        self._log.info(f"A(z) {info.user} adatbázis-jelszava megváltozott.")
+        self._log.info(f"The database password of {info.user} changed.")
 
 
-_IDENT_HELP = "Kisbetűvel kezdődjön, csak kisbetű, szám és aláhúzás lehet (legfeljebb 63 karakter)."
+_IDENT_HELP = (
+    "Must start with a lowercase letter; lowercase letters, digits and underscores only (max 63)."
+)

@@ -33,13 +33,13 @@ class Version:
         """Parse ``1.2.3``, ``v1.2.3``, ``1.2.3-rc.1``, ``1.2.3+build``."""
         match = _SEMVER_RE.match(text.strip()) if isinstance(text, str) else None
         if match is None:
-            raise VersionError(f"Érvénytelen verzió: {text!r}")
+            raise VersionError(f"Invalid version: {text!r}")
         pre = tuple(match["pre"].split(".")) if match["pre"] else ()
         build = tuple(match["build"].split(".")) if match["build"] else ()
         for ident in pre:
             # Numeric prerelease identifiers must not have leading zeros.
             if _NUMERIC_RE.match(ident) and len(ident) > 1 and ident.startswith("0"):
-                raise VersionError(f"Érvénytelen verzió: {text!r}")
+                raise VersionError(f"Invalid version: {text!r}")
         return cls(int(match["major"]), int(match["minor"]), int(match["patch"]), pre, build)
 
     @classmethod

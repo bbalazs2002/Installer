@@ -78,7 +78,7 @@ class Context:
         """The GitHub client for the stored token (rebuilt if the token changed)."""
         token = self.tokens.load()
         if token is None:
-            raise GitHubAuthError("Nincs GitHub-token megadva. Add meg a Beállítások menüpontban.")
+            raise GitHubAuthError("No GitHub token is set. Enter it in the Settings menu.")
         self.log.redactor.register(token)
         if self._github is None or self._github[0] != token:
             self._github = (token, self.github_factory(token))
@@ -137,14 +137,14 @@ class Context:
         target = Path(record.path)
         info = load_install_info(target)
         if info is None:
-            raise TelepitoError(f"A(z) {record.path} mappában nincs telepítés.")
+            raise TelepitoError(f"There is no installation in {record.path}.")
         layout = Layout(target)
         try:
             manifest = load_manifest(
                 (layout.release_dir(info.version) / MANIFEST_ASSET).read_bytes()
             )
         except OSError as exc:
-            raise TelepitoError(f"A telepített kiadás leírója nem olvasható: {exc}") from exc
+            raise TelepitoError(f"The installed release's descriptor is unreadable: {exc}") from exc
         return info, manifest, layout
 
     def pick_install(self, title: str, *, with_database: bool = False) -> InstallRecord | None:
@@ -153,7 +153,7 @@ class Context:
         if with_database:
             records = [r for r in records if self._has_database(r)]
         if not records:
-            self.ui.message("Nincs megfelelő telepített alkalmazás.", title=title)
+            self.ui.message("There is no suitable installed application.", title=title)
             return None
         if len(records) == 1:
             return records[0]
@@ -161,7 +161,7 @@ class Context:
         key = self.ui.menu(
             title,
             [Item(r.name, f"{r.name}  {r.version}", r.path) for r in records],
-            text="Melyik alkalmazás?",
+            text="Which application?",
         )
         return by_name[key]
 
@@ -176,16 +176,16 @@ class Context:
 # ------------------------------------------------------------------------- main menu
 
 _MAIN_ITEMS = [
-    ("install", "Telepítés / frissítés"),
-    ("updates", "Elérhető frissítések"),
-    ("secrets", "Jelszavak és .env"),
-    ("rollback", "Visszaállítás előző verzióra"),
-    ("database", "Adatbázis (mentés, visszatöltés, mentések törlése)"),
-    ("status", "Állapot"),
-    ("logs", "Naplók"),
-    ("settings", "Beállítások (GitHub-token, ismert repók)"),
-    ("selfupdate", "A telepítő frissítése"),
-    ("quit", "Kilépés"),
+    ("install", "Install / update"),
+    ("updates", "Available updates"),
+    ("secrets", "Passwords and .env"),
+    ("rollback", "Roll back to a previous version"),
+    ("database", "Database (backup, restore, delete backups)"),
+    ("status", "Status"),
+    ("logs", "Logs"),
+    ("settings", "Settings (GitHub token, known repositories)"),
+    ("selfupdate", "Update the installer"),
+    ("quit", "Quit"),
 ]
 
 
@@ -220,11 +220,11 @@ def run_menu(ctx: Context, *, updates_hint: Callable[[], int] | None = None) -> 
         items = []
         for key, label in _MAIN_ITEMS:
             if key == "updates" and pending:
-                label += f"  ({pending} frissítés elérhető)"
+                label += f"  ({pending} updates available)"
             items.append(Item(key, label))
         try:
             choice = ctx.ui.menu(
-                "Telepítő — főmenü", items, text=f"telepito {__version__}", default=default
+                "Installer — main menu", items, text=f"telepito {__version__}", default=default
             )
         except UiBack:
             return 0
@@ -246,11 +246,11 @@ def run_action(ctx: Context, action: Callable[[Context], None]) -> None:
     except UiBack:
         return
     except UserAbort as exc:
-        ctx.log.info(f"Megszakítva: {exc}")
-        ctx.ui.message(str(exc), title="Megszakítva")
+        ctx.log.info(f"Cancelled: {exc}")
+        ctx.ui.message(str(exc), title="Cancelled")
     except PrerequisiteError as exc:
         ctx.log.error(str(exc))
-        ctx.ui.message(str(exc), title="Hiányzó előfeltétel")
+        ctx.ui.message(str(exc), title="Missing prerequisite")
     except TelepitoError as exc:
         ctx.log.error(str(exc))
-        ctx.ui.message(str(exc), title="Hiba")
+        ctx.ui.message(str(exc), title="Error")

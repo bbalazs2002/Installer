@@ -95,7 +95,7 @@ def ask_validated(
         error = validator(value)
         if error is None:
             return value
-        ui.message(error, title=title or "Érvénytelen érték")
+        ui.message(error, title=title or "Invalid value")
 
 
 class _NullProgress(ProgressHandle):

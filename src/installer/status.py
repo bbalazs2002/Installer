@@ -25,7 +25,7 @@ class InstallStatus:
     path: str
     version: str
     port: int | None
-    health: str  # "ok", "nem válaszol", or a short problem description
+    health: str  # "ok", "not responding", or a short problem description
     containers: str
     note: str = ""
 
@@ -48,22 +48,22 @@ def _one(record: InstallRecord, docker: Docker, health: HealthChecker) -> Instal
         info = load_install_info(target)
     except StateError as exc:
         return InstallStatus(**base, version=record.version, port=None,
-                             health="ismeretlen", containers="", note=str(exc))  # fmt: skip
+                             health="unknown", containers="", note=str(exc))  # fmt: skip
     if info is None:
-        return InstallStatus(**base, version=record.version, port=None, health="ismeretlen",
-                             containers="", note="A célmappában nincs telepítés.")  # fmt: skip
+        return InstallStatus(**base, version=record.version, port=None, health="unknown",
+                             containers="", note="There is no installation in the target directory.")  # fmt: skip
 
     layout = Layout(target)
     release_dir = layout.release_dir(info.version)
     try:
         manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
     except (OSError, ManifestError) as exc:
-        note = f"A kiadás leírója nem olvasható: {exc}"
+        note = f"The release descriptor cannot be read: {exc}"
         return InstallStatus(
             **base,
             version=info.version,
             port=info.port,
-            health="ismeretlen",
+            health="unknown",
             containers="",
             note=note,
         )
@@ -79,7 +79,7 @@ def _one(record: InstallRecord, docker: Docker, health: HealthChecker) -> Instal
 
     port = info.port or manifest.port_default
     url = f"http://127.0.0.1:{port}{manifest.health_path}"
-    status = "nem válaszol"
+    status = "not responding"
     try:
         response = health(url)
         parsed = _reported_version(response.body, manifest.health_version_field)
@@ -87,7 +87,7 @@ def _one(record: InstallRecord, docker: Docker, health: HealthChecker) -> Instal
         if response.status == 200 and parsed is not None and parsed == expected:
             status = "ok"
         elif response.status == 200:
-            status = f"eltérő verziót jelez ({parsed or '?'})"
+            status = f"reports a different version ({parsed or '?'})"
         else:
             status = f"HTTP {response.status}"
     except OSError:
@@ -107,18 +107,18 @@ def _reported_version(body: bytes, field: str) -> Version | None:
 
 def format_status(items: Sequence[InstallStatus]) -> str:
     if not items:
-        return "Még nincs telepített alkalmazás."
+        return "There are no installed applications yet."
     blocks: list[str] = []
     for item in items:
         lines = [
             f"{item.name}  {item.version}  ({item.repo})",
-            f"  mappa:   {item.path}",
-            f"  állapot: {item.health}" + (f"  (port {item.port})" if item.port else ""),
+            f"  folder:  {item.path}",
+            f"  status: {item.health}" + (f"  (port {item.port})" if item.port else ""),
         ]
         if item.containers:
-            lines.append("  konténerek:")
+            lines.append("  containers:")
             lines += [f"    {line}" for line in item.containers.splitlines()]
         if item.note:
-            lines.append(f"  megjegyzés: {item.note}")
+            lines.append(f"  note: {item.note}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)

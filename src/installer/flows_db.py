@@ -14,17 +14,17 @@ from .ui.base import Item, UiBack
 
 
 def database_menu(ctx: Context) -> None:
-    record = ctx.pick_install("Adatbázis", with_database=True)
+    record = ctx.pick_install("Database", with_database=True)
     if record is None:
         return
     while True:
         try:
             choice = ctx.ui.menu(
-                f"Adatbázis — {record.name}",
+                f"Database — {record.name}",
                 [
-                    Item("backup", "Mentés most"),
-                    Item("restore", "Visszatöltés mentésből"),
-                    Item("cleanup", "Régi mentések törlése"),
+                    Item("backup", "Back up now"),
+                    Item("restore", "Restore from a backup"),
+                    Item("cleanup", "Delete old backups"),
                 ],
             )
         except UiBack:
@@ -39,7 +39,7 @@ def _context(ctx: Context, path: str):  # type: ignore[no-untyped-def]
     record = InstallRecord("", "", path, "", "")
     info, manifest, layout = ctx.load_install(record)
     if info.database is None:
-        raise TelepitoError("Ennek a telepítésnek nincs adatbázisa.")
+        raise TelepitoError("This installation has no database.")
     return info, manifest, layout
 
 
@@ -48,10 +48,10 @@ def _backup_now(ctx: Context, path: str, name: str) -> None:
     assert info.database is not None
     dump = ctx.database_ops().backup(info.database, info.version, layout.backups)
     if dump is None:
-        ctx.ui.message("Mentés nélkül folytattad; nem készült mentés.", title="Mentés")
+        ctx.ui.message("You continued without a backup; none was made.", title="Backup")
         return
-    ctx.log.info(f"{name}: kézi adatbázis-mentés: {dump.name}")
-    ctx.ui.message(f"A mentés elkészült:\n{dump}", title="Mentés")
+    ctx.log.info(f"{name}: manual database backup: {dump.name}")
+    ctx.ui.message(f"The backup was created:\n{dump}", title="Backup")
     _retention(ctx, path, force=False)
 
 
@@ -60,17 +60,19 @@ def _restore(ctx: Context, path: str, name: str) -> None:
     assert info.database is not None
     files = list_backups(layout.backups, info.database.name)
     if not files:
-        ctx.ui.message("Nincs mentés ehhez az adatbázishoz.", title="Visszatöltés")
+        ctx.ui.message("There is no backup of this database.", title="Restore")
         return
     by_path = {str(f.path): f for f in files}
     items = [
         Item(
             str(f.path),
-            f"{f.version:<12} {f.created}  {f.size / 2**20:.1f} MB".replace(".", ","),
+            f"{f.version:<12} {f.created}  {f.size / 2**20:.1f} MB",
         )
         for f in files
     ]
-    chosen = by_path[ctx.ui.choose("Melyik mentésből töltsem vissza?", items, default=items[0].key)]
+    chosen = by_path[
+        ctx.ui.choose("Which backup should I restore from?", items, default=items[0].key)
+    ]
 
     release_dir = layout.release_dir(info.version)
     compose_file = release_dir / manifest.compose_file
@@ -79,17 +81,17 @@ def _restore(ctx: Context, path: str, name: str) -> None:
         try:
             ctx.docker.compose_stop(manifest.project_name, compose_file, layout.compose_env)
         except DockerError as exc:
-            raise TelepitoError(f"Az alkalmazást nem sikerült leállítani: {exc}") from exc
+            raise TelepitoError(f"Stopping the application failed: {exc}") from exc
 
     ctx.database_ops().restore(info.database, chosen.path, prepare=stop_application)
-    ctx.log.info(f"{name}: adatbázis visszatöltve: {chosen.path.name}")
+    ctx.log.info(f"{name}: database restored: {chosen.path.name}")
     problem = ctx.installer().restart(Path(path))
     if problem is None:
-        ctx.ui.message("Az adatbázis visszatöltve, az alkalmazás újraindult.", title="Visszatöltés")
+        ctx.ui.message("The database was restored and the application restarted.", title="Restore")
     else:
         ctx.ui.message(
-            f"Az adatbázis visszatöltve, de az alkalmazás nem egészséges:\n{problem}",
-            title="Visszatöltés",
+            f"The database was restored, but the application is not healthy:\n{problem}",
+            title="Restore",
         )
 
 
@@ -101,7 +103,7 @@ def _retention(ctx: Context, path: str, *, force: bool) -> None:
     info, _, layout = _context(ctx, path)
     assert info.database is not None
     if not list_backups(layout.backups, info.database.name):
-        ctx.ui.message("Nincs mentés.", title="Mentések")
+        ctx.ui.message("There are no backups.", title="Backups")
         return
     flag = offer_retention(
         ctx.ui,
@@ -115,4 +117,4 @@ def _retention(ctx: Context, path: str, *, force: bool) -> None:
     if flag != info.auto_delete_old_backups:
         save_install_info(layout.root, replace(info, auto_delete_old_backups=flag))
     elif force:
-        ctx.ui.message("Kész.", title="Mentések")
+        ctx.ui.message("Done.", title="Backups")

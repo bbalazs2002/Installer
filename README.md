@@ -1,75 +1,85 @@
-# Telepítő (`telepito`)
+# Installer (`telepito`)
 
-Interaktív, a szerveren kézzel indított eszköz, amely egy **privát GitHub-repó verziózott
-release-ét** letölti, és Docker-konténerként **telepíti vagy frissíti**. A build a GitHubon
-történik; a szerverre csak az a néhány fájl kerül le, ami a futtatáshoz kell (nincs forráskód,
-nincs build). A telepítő egyetlen fájl (`telepito.pyz`), csak a Python szabványos könyvtárát és
-a szerveren amúgy is meglévő eszközöket (`whiptail`, `openssl`, `docker`) használja.
+An interactive tool, started by hand on the server, that downloads a **versioned release of a
+private GitHub repository** and **installs or updates** it as a Docker container. The build
+happens on GitHub; only the few files needed to run the application reach the server (no source
+code, no build). The installer itself is a single file (`telepito.pyz`) that uses only the Python
+standard library and tools the server already has (`whiptail`, `openssl`, `docker`).
 
-A felületi szövegek magyarul vannak; a kód, a kommentek és a commit-üzenetek angolul.
+The program is called `telepito` (its command, its `telepito.pyz` release asset and its
+`--version` output) so that installers deployed earlier can keep updating themselves; the
+Python package inside is `installer`.
 
-## Amit tud
+## What it does
 
-- **Telepítés és frissítés** egy kiválasztott release-ből: letöltés, SHA-256 ellenőrzés,
-  a compose-fájl változásainak áttekintése, Docker-kép betöltése, indítás, állapot-ellenőrzés,
-  és csak siker után átváltás az új kiadásra (`current` link).
-- **Visszalépés** korábbi verzióra, az adatbázis-migrációk ellenőrzésével és figyelmeztetéssel.
-- **Hiba esetén megerősítéssel** visszaállítás az előző kiadásra (soha nem automatikusan).
-- **Elérhető frissítések** listája (indításkor is megnézi).
-- **A `.env.production` varázsló**, titkok generálása, a titkosított **jelszótár**, titkok forgatása.
-- **Adatbázis** a megosztott Postgresben: létrehozás (SCRAM), mentés minden frissítés előtt,
-  visszatöltés, az egy évnél régebbi mentések törlése.
-- **Önfrissítés** (`telepito.pyz` cseréje ellenőrzéssel).
+- **Install and update** from a chosen release: download, SHA-256 verification, review of the
+  compose file changes, loading the Docker image, start, health check, and only after success
+  the switch to the new release (the `current` link).
+- **Downgrade** to an older version, with a check of the database migrations and a warning.
+- **On failure, recovery only with confirmation** (it never rolls back on its own).
+- **Available updates** list (also checked when the menu opens).
+- **A `.env.production` wizard**, secret generation, an encrypted **vault**, secret rotation.
+- **Database** in a shared Postgres: creation (SCRAM), a backup before every update, restore,
+  and deletion of backups older than a year.
+- **Self-update** (replacing `telepito.pyz` with verification).
 
-Amit nem csinál: operációs rendszer frissítése, Apache vagy systemd módosítása (csak kiírja a
-javasolt beállítást), root-jog használata (ha root kell, kiírja a pontos parancsot), több gépre
-telepítés.
+What it does not do: update the operating system, change Apache or systemd (it only prints the
+suggested configuration), use root privileges (when root is needed it prints the exact command),
+install on several machines.
 
-## Követelmények a szerveren
+## Requirements on the server
 
 | | |
 |---|---|
-| Rendszer | Ubuntu 22.04, x86_64 |
-| Python | `python3` 3.10 vagy újabb (külső csomag nem kell) |
-| Eszközök | `whiptail`, `openssl`, `curl`, `jq`, `sha256sum` |
-| Docker | Docker Engine és Docker Compose v2 (`docker compose`) |
-| Felhasználó | a `docker` csoport tagja; **sudo nem kell**, root-ként a telepítő nem indul |
+| System | Ubuntu 22.04, x86_64 |
+| Python | `python3` 3.10 or newer (no extra packages) |
+| Tools | `whiptail`, `openssl`, `curl`, `jq`, `sha256sum` |
+| Docker | Docker Engine and Docker Compose v2 (`docker compose`) |
+| User | member of the `docker` group; **no sudo needed**, and the installer refuses to run as root |
 
-## Első beállítás a szerveren
+## First setup on the server
 
-Az 1. lépés root jogot igényel, ezt a telepítő soha nem futtatja helyetted.
+Step 1 needs root; the installer never runs it for you.
 
-### 1. 🔧 Mappák (root)
+### 1. 🔧 The installer directory (root)
+
+The installer keeps its own files in the directory that contains `telepito.pyz` — you choose
+where that is (the examples use `/var/Installer`). Create it for the user who will run the
+installer:
 
 ```bash
-sudo mkdir -p /var/www/telepito && sudo chown deploy:webapps /var/www/telepito && sudo chmod 2775 /var/www/telepito
-sudo mkdir -p /var/www/<alkalmazás> && sudo chown deploy:webapps /var/www/<alkalmazás> && sudo chmod 2775 /var/www/<alkalmazás>
+sudo mkdir -p /var/Installer && sudo chown "$USER" /var/Installer
 ```
 
-(A `deploy:webapps` helyett a saját felhasználód és csoportod is jó; a lényeg, hogy az a
-felhasználó írhassa, aki a telepítőt futtatja.)
+(If several people share it, use a shared group and mode `2775`.) Every application is installed
+into a directory of its own, for example:
 
-### 2. GitHub-token létrehozása
+```bash
+sudo mkdir -p /var/www/<application> && sudo chown "$USER" /var/www/<application>
+```
+
+### 2. Create a GitHub token
 
 GitHub → *Settings → Developer settings → Fine-grained personal access tokens*:
 
-- **Repository access:** csak a szükséges repók: ez a repó (az önfrissítéshez) és a telepítendő
-  projektek repói;
+- **Repository access:** only the repositories you need: this one (for self-update) and the
+  repositories of the projects you install;
 - **Permissions:** *Contents: Read*, *Metadata: Read*;
-- **Expiration:** legfeljebb 90 nap.
+- **Expiration:** at most 90 days.
 
-### 3. A telepítő első letöltése
+### 3. Download the installer for the first time
 
-A token a `curl` konfigurációján át, **stdin-en** megy, így a folyamatlistában sem látszik.
+The token reaches `curl` through its configuration on **stdin**, so it never shows up in the
+process list. The commands run in a subshell with `set -e`: any failure (wrong token, no release,
+checksum mismatch) stops them, and an existing `telepito.pyz` stays untouched.
 
 ```bash
 (
   set -euo pipefail
-  cd /var/www/telepito
-  read -rsp 'GitHub-token: ' TOKEN; echo
+  cd /var/Installer
+  read -rsp 'GitHub token: ' TOKEN; echo
   REPO=bbalazs2002/Installer
-  api() { printf 'header = "Authorization: Bearer %s"
-' "$TOKEN" | curl -fsSL -K - "$@"; }
+  api() { printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -fsSL -K - "$@"; }
 
   rm -rf .download && mkdir .download && cd .download
   release=$(api -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases/latest")
@@ -85,125 +95,129 @@ A token a `curl` konfigurációján át, **stdin-en** megy, így a folyamatlist�
 )
 ```
 
-A parancsok egy alshellben futnak (`set -e`), ezért bármelyik hiba (rossz token, nincs release,
-nem egyező összeg) megállítja a folyamatot, és a meglévő `telepito.pyz` érintetlen marad. A
-sikeres futás jele a `telepito.pyz: OK` sor; a token csak az alshell változójában él.
+A successful run prints `telepito.pyz: OK`. The token only lives in the subshell's variable.
 
-### 4. Indítás és a token megadása
+### 4. Start it and enter the token
 
 ```bash
-/var/www/telepito/telepito.pyz
+/var/Installer/telepito.pyz
 ```
 
-(Vagy `python3 /var/www/telepito/telepito.pyz`. A kényelemért: `ln -s /var/www/telepito/telepito.pyz ~/bin/telepito`.
-Az önfrissítés a szimbolikus linket követi, és a valódi fájlt cseréli.)
+(Or `python3 /var/Installer/telepito.pyz`. For convenience:
+`ln -s /var/Installer/telepito.pyz ~/bin/telepito` — the installer follows the symlink to the real
+file, so its own files and the self-update always use the real directory.)
 
-*Beállítások → GitHub-token megadása és ellenőrzése*: a token rejtett bevitellel kerül a
-`~/.config/telepito/token` fájlba (600-as jogosultság). A telepítő megnézi, hogy a token
-hozzáfér-e egy repóhoz, és figyelmeztet, ha 14 napon belül lejár.
+Open *Settings → Set and verify the GitHub token*: the token is entered hidden and saved to
+`~/.config/telepito/token` (mode 600). The installer checks that it can reach a repository and
+warns when the token expires within 14 days.
 
-Ezután *Telepítés / frissítés*: repó, kiadás, célmappa, port, terv, megerősítés.
+Then *Install / update*: repository, release, target directory, port, plan, confirmation.
 
-## Használat
+To keep the installer's files somewhere else than next to `telepito.pyz`, use `--state-dir
+<dir>` or the `TELEPITO_STATE_DIR` environment variable.
+
+## Usage
 
 ```
-Telepítő — főmenü
- Telepítés / frissítés
- Elérhető frissítések
- Jelszavak és .env
- Visszaállítás előző verzióra
- Adatbázis (mentés, visszatöltés, mentések törlése)
- Állapot
- Naplók
- Beállítások (GitHub-token, ismert repók)
- A telepítő frissítése
- Kilépés
+Installer — main menu
+ Install / update
+ Available updates
+ Passwords and .env
+ Roll back to a previous version
+ Database (backup, restore, delete backups)
+ Status
+ Logs
+ Settings (GitHub token, known repositories)
+ Update the installer
+ Quit
 ```
 
-Minden képernyőn az **Esc** vagy a **Vissza** egy lépést visz vissza. A lapozható szövegdobozban
-(napló, terv, különbség) a **Tab** az *OK* gombra ugrik, onnan az Enter bezárja.
+On every screen **Esc** or **Back** goes one step back. In the scrollable text boxes (log, plan,
+diff) press **Tab** to jump to the *OK* button, then Enter closes the box.
 
-A menü mellett csak olvasó, diagnosztikai parancsok vannak (módosítani csak a menü tud, nincs
-`--yes` kapcsoló):
+Next to the menu there are read-only diagnostic commands (only the menu can change anything;
+there is no `--yes` switch):
 
-| Parancs | Mit csinál |
+| Command | What it does |
 |---|---|
-| `telepito --version` | a verzió kiírása |
-| `telepito status [--json]` | a telepített alkalmazások állapota (titkot nem ír ki) |
-| `telepito plan <owner/repo> <verzió> <célmappa>` | a terv kiírása; semmit nem módosít |
-| `telepito updates` | az elérhető frissítések listája |
+| `telepito --version` | print the version |
+| `telepito status [--json]` | the state of the installed applications (prints no secrets) |
+| `telepito plan <owner/repo> <version> <target>` | print the plan; changes nothing |
+| `telepito updates` | list the available updates |
 
-Kilépési kódok: `0` siker, `1` hiba, `2` a felhasználó megszakította, `3` hiányzó előfeltétel.
+Exit codes: `0` success, `1` failure, `2` cancelled by the user, `3` a prerequisite is missing.
 
-## Mi hol van a szerveren
+## What lives where on the server
 
 ```
-/var/www/telepito/                 2775
-  telepito.pyz                     a telepítő (önfrissíthető), mellette telepito.pyz.previous
-  repos.json                       ismert repók
-  installs.json                    nyilvántartás (titok nélkül)
-  vault/vault.enc                  titkosított jelszótár (600)
-  logs/YYYY-MM-DD.log              napló (a titkok kimaszkolva)
-  tmp/                             ideiglenes letöltések (a telepítő törli)
-  .lock                            egyidejű futás ellen
-~/.config/telepito/token           GitHub-token (600)
+<installer directory>/             the directory that contains telepito.pyz
+  telepito.pyz                     the installer (self-updating); next to it telepito.pyz.previous
+  repos.json                       known repositories
+  installs.json                    the registry of installations (no secrets)
+  vault/vault.enc                  encrypted vault (600)
+  logs/YYYY-MM-DD.log              log (secrets masked)
+  tmp/                             temporary downloads (the installer cleans them up)
+  .lock                            prevents concurrent runs
+~/.config/telepito/token           GitHub token (600)
 
-/var/www/<alkalmazás>/
-  releases/<verzió>/               a kiadás (compose, deploy.json, .env.production -> ../../shared/...)
-  current -> releases/<verzió>     atomi átváltás
-  shared/.env.production           600  az alkalmazás futásidejű környezete (titkokkal)
-  shared/compose.env               600  a compose változói (APP_VERSION, PORT, DB_NETWORK)
-  backups/<db>-<verzió>-<idő>.dump 600  adatbázis-mentések
-  .install.json                    telepítési nyilvántartás (jelszó nélkül)
+/var/www/<application>/            (the target directory you choose)
+  releases/<version>/              the release (compose, deploy.json, .env.production -> ../../shared/...)
+  current -> releases/<version>    atomic switch
+  shared/.env.production           600  the application's runtime environment (with secrets)
+  shared/compose.env               600  compose variables (APP_VERSION, PORT, DB_NETWORK)
+  backups/<db>-<version>-<time>.dump  600  database backups
+  .install.json                    installation record (no passwords)
 ```
 
-## Biztonsági elvek
+## Security principles
 
-- **Nincs belépés a szerverre kívülről.** A GitHub semmit nem telepít: a szerver csak *olvas* a
-  GitHubból, egy csak olvasásra szóló tokennel, kézi indítással.
-- **Integritás:** minden letöltött fájlt a `SHA256SUMS` alapján ellenőriz. Ez a sérülés ellen
-  véd; a hitelességet a GitHub-fiók adja. Ezért frissítéskor a compose-fájl változása
-  **megjelenik**, a veszélyes beállítások (`privileged`, új `volumes`, nem loopbackre kötött
-  `ports`, `docker.sock`, ...) külön megerősítést kérnek, a `build:` pedig tilos.
-- **Titkok:** a token csak az `Authorization` fejlécben utazik (átirányításnál a fejlécet
-  eldobja), a jelszavak soha nem kerülnek parancssori argumentumba vagy környezeti változóba,
-  a napló és a képernyő minden ismert titkot `***`-ra cserél. A jelszótár scrypt + AES-256 +
-  HMAC (encrypt-then-MAC); a mester-jelszót sehol nem tárolja. **Ha elfelejted, a jelszótár
-  nem állítható helyre.**
-- **Nincs root:** a telepítő sosem hív `sudo`-t, és root-ként el sem indul.
-- **Visszaállítás csak megerősítéssel**, adatbázis-visszatöltés csak az adatbázis nevének
-  begépelésével, és előbb mindig mentés készül a jelenlegi állapotról.
+- **No way into the server from outside.** GitHub installs nothing: the server only *reads* from
+  GitHub, with a read-only token, started by hand.
+- **Integrity:** every downloaded file is verified against `SHA256SUMS`. That protects against
+  corruption; authenticity comes from the GitHub account. That is why the compose file changes
+  are **shown** on every update, dangerous settings (`privileged`, new `volumes`, ports not bound
+  to loopback, `docker.sock`, ...) need a separate confirmation, and `build:` is forbidden.
+- **Secrets:** the token travels only in the `Authorization` header (the header is dropped on a
+  redirect), passwords never appear in command-line arguments or environment variables, and the
+  log and the screen replace every known secret with `***`. The vault uses scrypt + AES-256 +
+  HMAC (encrypt-then-MAC); the master password is stored nowhere. **If you forget it, the vault
+  cannot be recovered.**
+- **No root:** the installer never calls `sudo`, and refuses to start as root.
+- **Recovery only with confirmation**; a database restore needs the database name typed in, and a
+  backup of the current state is always made first.
 
-## Egy projekt telepíthetővé tétele
+## Making a project installable
 
-A telepítendő repó minden release-ében pontosan meghatározott mellékleteknek kell lenniük
-(`deploy.json`, `docker-compose.deploy.yml`, `image.tar.gz`, `migrations.txt`, `SHA256SUMS`).
-A részleteket, a `deploy.json` mezőit és egy példát a [docs/release-contract.md](docs/release-contract.md)
-írja le.
+Every release of an installable repository must carry exactly the assets defined in the contract
+(`deploy.json`, `docker-compose.deploy.yml`, `image.tar.gz`, `migrations.txt`, `SHA256SUMS`). The
+details, the fields of `deploy.json` and an example are in
+[docs/release-contract.md](docs/release-contract.md).
 
-## Fejlesztés
+## Development
 
-Csak a Python szabványos könyvtára kell a futáshoz; a fejlesztéshez `ruff` és `mypy`.
+Running needs only the Python standard library; development needs `ruff` and `mypy`.
 
 ```bash
 python -m pip install ruff mypy
-python -m unittest discover -s tests -t .      # az összes teszt
-ruff check . && ruff format --check . && mypy  # statikus ellenőrzés
+python -m unittest discover -s tests -t .      # all tests
+ruff check . && ruff format --check . && mypy  # static checks
 python scripts/build_pyz.py                    # dist/telepito.pyz
 ```
 
-- A tesztek hamis GitHubbal (helyi `http.server`), hamis Dockerrel és hamis felülettel futnak.
-- A **valódi Docker tesztek** (`postgres:17-alpine` és `postgres:15-alpine` eldobható
-  konténerek, `docker compose config`) és a **valódi `whiptail` tesztek** (Linux, pty) külön
-  jelöltek; Docker nélkül vagy `TELEPITO_SKIP_DOCKER_TESTS=1` mellett kimaradnak.
-- Windowson a Linux-specifikus részek (`flock`, `whiptail`, atomi link-csere) tartalék úton
-  futnak; a teljes ellenőrzés Linuxon történik (CI: Python 3.10 és 3.12).
+- Tests run against a fake GitHub (a local `http.server`), a fake Docker and a fake UI.
+- The **real Docker tests** (throw-away `postgres:17-alpine` and `postgres:15-alpine` containers,
+  `docker compose config`) and the **real `whiptail` tests** (Linux, pty) are marked separately;
+  they are skipped without Docker or with `TELEPITO_SKIP_DOCKER_TESTS=1`.
+- On Windows the Linux-specific parts (`flock`, `whiptail`, atomic link replacement) use fallbacks;
+  the full verification runs on Linux (CI: Python 3.10 and 3.12).
 
-## Új kiadás készítése
+## Making a new release
 
-1. A `src/telepito/__init__.py`-ban a `__version__` átírása, a `CHANGELOG.md` frissítése, commit.
+1. Change `__version__` in `src/installer/__init__.py`, update `CHANGELOG.md`, commit.
 2. `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. A `release.yml` lefuttatja a teljes CI-t, ellenőrzi, hogy a címke egyezik a verzióval,
-   felépíti a `telepito.pyz`-t, és létrehozza a release-t két melléklettel:
-   `telepito.pyz` és `SHA256SUMS`. A `-rc.1` stb. végű címkék előzetes kiadások, az önfrissítés
-   ezeket nem kínálja fel.
+3. `release.yml` runs the whole CI, checks that the tag matches the version, builds
+   `telepito.pyz` and creates the release with two assets: `telepito.pyz` and `SHA256SUMS`.
+   Tags ending in `-rc.1` and the like are pre-releases; the self-update does not offer them.
+
+Keep the program name (`telepito`), the `telepito.pyz` asset name and the `telepito <version>`
+output of `--version` unchanged: installers already deployed rely on them to update themselves.

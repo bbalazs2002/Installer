@@ -19,7 +19,7 @@ from .ui.base import Ui
 from .wizard import InteractiveEnvConfigurator, VaultProvider
 
 MASKED = "********"
-NOT_SET = "(nincs beállítva)"
+NOT_SET = "(not set)"
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ def describe_env(manifest: Manifest, env: dict[str, str]) -> list[EnvRow]:
 def _declared(manifest: Manifest, name: str) -> EnvVar:
     item = manifest.env_by_name(name)
     if item is None:
-        raise EnvConfigError(f"A(z) {name} nem szerepel a kiadás változói között.")
+        raise EnvConfigError(f"{name} is not among the variables of the release.")
     return item
 
 
@@ -65,7 +65,7 @@ def edit_value(
     """Set one declared, non-fixed variable after validating it."""
     item = _declared(manifest, name)
     if item.fixed is not None:
-        raise EnvConfigError(f"A(z) {name} rögzített érték, nem módosítható.")
+        raise EnvConfigError(f"{name} is a fixed value and cannot be changed.")
     error = check_value(item, value)
     if error is not None:
         raise EnvConfigError(error)
@@ -90,15 +90,15 @@ def rotate_secret(
     """
     item = _declared(manifest, name)
     if not item.secret:
-        raise EnvConfigError(f"A(z) {name} nem titok, nem forgatható.")
+        raise EnvConfigError(f"{name} is not a secret and cannot be rotated.")
 
     warning = (
-        f"A(z) {name} cseréje után az alkalmazás csak újraindítás után használja az új értéket."
+        f"After changing {name}, the application only uses the new value once it is restarted."
     )
     if item.rotation_warning:
         warning += f"\n\n{item.rotation_warning}"
-    if not ui.confirm(warning + "\n\nFolytatod?", title=f"{name} forgatása"):
-        raise UserAbort("A forgatás megszakítva.")
+    if not ui.confirm(warning + "\n\nContinue?", title=f"Rotate {name}"):
+        raise UserAbort("The rotation was cancelled.")
 
     wizard = InteractiveEnvConfigurator(ui, redactor, vault_provider)
     pending: dict[str, str] = {}

@@ -146,7 +146,7 @@ class Deps:
     docker: Docker
     ui: Ui
     log: Logger
-    state_dir: Path  # e.g. /var/www/telepito: installs.json, .lock
+    state_dir: Path  # the installer directory: installs.json, .lock
     env: EnvConfigurator
     db: DatabaseOps | None = None
     health: HealthChecker = http_health
@@ -178,10 +178,10 @@ def parse_sums(text: str) -> dict[str, str]:
             continue
         match = _SUMS_LINE.match(line.strip())
         if match is None:
-            raise ReleaseError("A SHA256SUMS fájl formátuma érvénytelen.")
+            raise ReleaseError("The SHA256SUMS file has an invalid format.")
         name = match.group(2)
         if "/" in name or "\\" in name or ".." in name:
-            raise ReleaseError(f"A SHA256SUMS érvénytelen fájlnevet tartalmaz: {name!r}")
+            raise ReleaseError(f"SHA256SUMS contains an invalid file name: {name!r}")
         sums[name] = match.group(1).lower()
     return sums
 
@@ -196,7 +196,7 @@ def sha256_file(path: Path) -> str:
 
 def verify_file(path: Path, expected: str, name: str) -> None:
     if not hmac.compare_digest(sha256_file(path), expected.lower()):
-        raise ReleaseError(f"A(z) {name} SHA-256 összege nem egyezik; a letöltés törölve.")
+        raise ReleaseError(f"The SHA-256 sum of {name} does not match; the download was deleted.")
 
 
 def parse_migrations(text: str) -> tuple[str, ...]:
@@ -206,7 +206,7 @@ def parse_migrations(text: str) -> tuple[str, ...]:
         if not name:
             continue
         if not _MIGRATION_NAME.match(name):
-            raise ReleaseError(f"Érvénytelen migrációnév a migrations.txt-ben: {name!r}")
+            raise ReleaseError(f"Invalid migration name in migrations.txt: {name!r}")
         names.append(name)
     return tuple(names)
 
@@ -310,7 +310,7 @@ class Installer:
         """
         missing = missing_assets(release)
         if missing:
-            raise ReleaseError("A kiadásból hiányzó mellékletek: " + ", ".join(missing))
+            raise ReleaseError("Assets missing from the release: " + ", ".join(missing))
         directory.mkdir(parents=True, exist_ok=True)
 
         sums_path = directory / SUMS_ASSET
@@ -334,7 +334,7 @@ class Installer:
             )
             migrations = parse_migrations(path.read_text(encoding="utf-8"))
         if IMAGE_ASSET not in sums:
-            raise ReleaseError("A SHA256SUMS nem tartalmazza az image.tar.gz összegét.")
+            raise ReleaseError("SHA256SUMS does not contain the sum of image.tar.gz.")
         return ReleaseMeta(manifest, migrations, sums, directory)
 
     def preflight(
@@ -348,25 +348,27 @@ class Installer:
             problems.append(str(exc))
         image = release.asset(IMAGE_ASSET)
         needed = (image.size if image else 0) * 3 + GIB
-        roots = [("a célmappa", target)]
+        roots = [("the target directory", target)]
         try:
             docker_root = self.d.docker.root_dir()
         except DockerError:
             docker_root = None
         if docker_root:
-            roots.append(("a Docker-gyökér", Path(docker_root)))
+            roots.append(("the Docker root", Path(docker_root)))
         for label, path in roots:
             free = self.d.disk_free(path)
             if free < needed:
                 problems.append(
-                    f"Nincs elég szabad hely ({label}): {free // 2**20} MB szabad, "
-                    f"{needed // 2**20} MB kell."
+                    f"Not enough free space ({label}): {free // 2**20} MB free, "
+                    f"{needed // 2**20} MB needed."
                 )
         if kind is PlanKind.NEW and self.d.port_in_use(port):
-            problems.append(f"A(z) {port} port foglalt. Válassz másik portot.")
+            problems.append(f"Port {port} is in use. Choose another port.")
         if meta.manifest.database is not None and kind is PlanKind.NEW:
             if self.d.db is None:
-                problems.append("Az alkalmazásnak adatbázis kell, de nincs adatbázis-kezelő.")
+                problems.append(
+                    "The application needs a database, but no database support is set up."
+                )
             else:
                 problems += self.d.db.precheck(meta.manifest)
         return problems
@@ -378,21 +380,21 @@ class Installer:
             return
         if confirmation.kind is ConfirmKind.CONFIRM:
             if not self.d.ui.confirm(confirmation.prompt):
-                raise UserAbort("A felhasználó megszakította a műveletet.")
+                raise UserAbort("The user cancelled the operation.")
             return
         typed = self.d.ui.text(confirmation.prompt)
         if not confirmation.accepts(typed):
-            raise UserAbort("A megerősítő szó nem egyezik; a művelet megszakítva.")
+            raise UserAbort("The confirmation word does not match; operation cancelled.")
 
     # ------------------------------------------------------------------ install/update
 
     def install(self, job: InstallJob) -> InstallResult:
         """Run a confirmed plan (NEW, UPDATE, SAME or DOWNGRADE)."""
         if not job.plan.can_proceed:
-            raise TelepitoError("A terv akadályt tartalmaz, a művelet nem végezhető el.")
+            raise TelepitoError("The plan has blockers; the operation cannot be carried out.")
         if not job.target.is_dir():
             raise TelepitoError(
-                f"A célmappa ({job.target}) nem létezik. Hozd létre root jogosultsággal, pl.: "
+                f"The target directory ({job.target}) does not exist. Create it with root privileges, e.g.: "
                 f"sudo mkdir -p {job.target} && sudo chown $USER {job.target}"
             )
         self.d.state_dir.mkdir(parents=True, exist_ok=True)
@@ -401,7 +403,7 @@ class Installer:
                 return self._install_locked(job)
             except KeyboardInterrupt:
                 self.d.log.warning(
-                    "Megszakítva (Ctrl+C). A current link nem változott; a telepítés újraindítható."
+                    "Interrupted (Ctrl+C). The current link did not change; the installation can be restarted."
                 )
                 raise
 
@@ -446,7 +448,7 @@ class Installer:
         image_path = staging / IMAGE_ASSET
         expected = meta.sums[IMAGE_ASSET]
         if image_path.exists() and sha256_file(image_path) == expected:
-            self.d.log.info("A kép már le van töltve és ellenőrizve (újraindított futás).")
+            self.d.log.info("The image is already downloaded and verified (restarted run).")
         else:
             asset = job.release.asset(IMAGE_ASSET)
             assert asset is not None
@@ -471,21 +473,21 @@ class Installer:
         review = review_compose(old_text, new_text)
         if review.build_present:
             raise ReleaseError(
-                "A kiadás docker-compose fájlja `build:` szót tartalmaz, ez a szerződés szerint "
-                "tilos (csak kész képet lehet használni)."
+                "The release's docker-compose file contains `build:`, which the contract forbids "
+                "(only prebuilt images may be used)."
             )
         if old_text is None:
             return
         if review.identical:
-            self.d.ui.message("A docker-compose fájl nem változott.", title="Compose-áttekintés")
+            self.d.ui.message("The docker-compose file did not change.", title="Compose review")
             return
-        self.d.ui.message(review.diff, title="A docker-compose fájl változásai", scroll=True)
-        self.d.log.info("Compose-különbség:\n" + review.diff)
+        self.d.ui.message(review.diff, title="Changes to the docker-compose file", scroll=True)
+        self.d.log.info("Compose diff:\n" + review.diff)
         if review.needs_confirmation and not self.d.ui.confirm(
-            "A kiadás veszélyes beállítást tartalmazhat (a !! jelölt sorok). Biztosan folytatod?",
-            title="Compose-áttekintés",
+            "The release may contain a dangerous setting (the lines marked !!). Continue anyway?",
+            title="Compose review",
         ):
-            raise UserAbort("A felhasználó elutasította a compose-fájl változásait.")
+            raise UserAbort("The user rejected the changes to the compose file.")
 
     def _previous_names(self, run: _Run) -> set[str]:
         """Variable names the currently installed release declared (for removal detection)."""
@@ -508,8 +510,7 @@ class Installer:
         )
         update_env_file(run.layout.env_file, changes.set, changes.remove)
         self.d.log.info(
-            f".env.production: {len(changes.set)} változó beállítva, "
-            f"{len(changes.remove)} eltávolítva."
+            f".env.production: {len(changes.set)} variables set, {len(changes.remove)} removed."
         )
 
     def _database_step(self, run: _Run) -> None:
@@ -517,7 +518,9 @@ class Installer:
         if manifest.database is None:
             return
         if self.d.db is None:
-            raise TelepitoError("Az alkalmazásnak adatbázis kell, de nincs adatbázis-kezelő.")
+            raise TelepitoError(
+                "The application needs a database, but no database support is set up."
+            )
         if run.kind is PlanKind.NEW:
             setup = self.d.db.create(manifest)
             update_env_file(run.layout.env_file, setup.env)
@@ -526,7 +529,7 @@ class Installer:
         assert run.prior is not None
         run.db_info = run.prior.database
         if run.prior.database is None:
-            raise TelepitoError("A telepítési nyilvántartásból hiányzik az adatbázis adata.")
+            raise TelepitoError("The installation record is missing the database details.")
         self._backup_database(run, run.prior)
 
     def _backup_database(self, run: _Run, prior: InstallInfo) -> None:
@@ -545,13 +548,13 @@ class Installer:
     def _load_image(self, run: _Run, staging: Path) -> None:
         docker = self.d.docker
         if docker.image_exists(run.image_ref):
-            self.d.log.info(f"A(z) {run.image_ref} kép már be van töltve.")
+            self.d.log.info(f"The image {run.image_ref} is already loaded.")
         else:
             docker.load_image(staging / IMAGE_ASSET)
             if not docker.image_exists(run.image_ref):
                 raise ReleaseError(
-                    f"A betöltött képek között nincs {run.image_ref}. "
-                    "A kiadás képének címkéje nem egyezik a verzióval."
+                    f"The loaded images do not include {run.image_ref}. "
+                    "The release's image tag does not match its version."
                 )
         # The image lives in Docker now; no second copy stays on disk.
         (staging / IMAGE_ASSET).unlink(missing_ok=True)
@@ -600,21 +603,21 @@ class Installer:
         url = f"http://127.0.0.1:{port}{manifest.health_path}"
         started = d.monotonic()
         deadline = started + manifest.health_timeout_seconds
-        last = "még nem válaszol"
+        last = "not responding yet"
         tick = 0
-        with d.ui.progress("Állapot-ellenőrzés", f"{manifest.display_name} indul...") as bar:
+        with d.ui.progress("Health check", f"{manifest.display_name} is starting...") as bar:
             while True:
                 try:
                     response = d.health(url)
                     if is_healthy(response, manifest.health_version_field, version):
-                        d.log.info(f"Az alkalmazás egészséges ({url}).")
+                        d.log.info(f"The application is healthy ({url}).")
                         return None
-                    last = f"HTTP {response.status}, nem a várt verziót jelzi"
+                    last = f"HTTP {response.status}, does not report the expected version"
                 except OSError:
-                    last = "nem válaszol"
+                    last = "not responding"
                 now = d.monotonic()
                 if now >= deadline:
-                    return f"Az állapot-ellenőrzés időtúllépéssel végződött ({last})."
+                    return f"The health check timed out ({last})."
                 tick += 1
                 percent = int((now - started) * 100 / manifest.health_timeout_seconds)
                 text = f"{manifest.display_name}: {last}"
@@ -629,7 +632,7 @@ class Installer:
                 manifest.project_name, compose_file, layout.compose_env, tail=tail
             )
         except DockerError as exc:
-            return f"(a napló nem érhető el: {exc})"
+            return f"(the log is not available: {exc})"
 
     def _handle_failure(self, run: _Run, release_dir: Path, problem: str) -> None:
         """Show the logs, offer recovery, and raise :class:`InstallFailed`.
@@ -639,20 +642,20 @@ class Installer:
         d, manifest, layout = self.d, run.manifest, run.layout
         compose_file = release_dir / manifest.compose_file
         logs = self._logs(manifest, compose_file, layout, _FAILURE_LOG_LINES)
-        d.log.error(f"Sikertelen indítás: {problem}")
+        d.log.error(f"Start failed: {problem}")
         d.log.output(logs)
         d.ui.message(
-            f"{manifest.display_name} {run.version}: {problem}\n\nA konténer naplója:\n{logs}",
-            title="Sikertelen indítás",
+            f"{manifest.display_name} {run.version}: {problem}\n\nContainer log:\n{logs}",
+            title="Start failed",
             scroll=True,
         )
 
         items, can_restore_db = self._recovery_items(run)
         try:
             choice = d.ui.menu(
-                "Mi legyen?",
+                "What now?",
                 items,
-                text="A telepítő megerősítés nélkül semmit nem állít vissza.",
+                text="The installer never restores anything without your confirmation.",
             )
         except UiBack:
             choice = "keep"
@@ -665,11 +668,11 @@ class Installer:
             except DockerError as exc:
                 d.log.error(str(exc))
             raise InstallFailed(
-                f"A telepítés sikertelen, a konténer leállítva. A kiadás itt maradt: {release_dir}"
+                f"The installation failed and the container was stopped. The release stays at: {release_dir}"
             )
         raise InstallFailed(
-            f"A telepítés sikertelen ({problem}). A hiba megtartva vizsgálatra: {release_dir}. "
-            "A current link nem változott."
+            f"The installation failed ({problem}). The failure was kept for inspection: {release_dir}. "
+            "The current link did not change."
         )
 
     def _recovery_items(self, run: _Run) -> tuple[list[Item], bool]:
@@ -687,19 +690,19 @@ class Installer:
                 )
                 if not migrated:
                     items.append(
-                        Item("rollback", f"Visszaállás az előző kiadásra ({prior.version})")
+                        Item("rollback", f"Roll back to the previous release ({prior.version})")
                     )
                 elif run.backup_path is not None and self.d.db is not None:
                     can_restore_db = True
                     items.append(
                         Item(
                             "rollback_restore",
-                            f"Előző kiadás ({prior.version}) + adatbázis visszatöltése a mentésből",
+                            f"Previous release ({prior.version}) + restore the database from the backup",
                         )
                     )
-        items.append(Item("keep", "A hiba megtartása vizsgálatra"))
+        items.append(Item("keep", "Keep the failure for inspection"))
         if run.prior is None:
-            items.append(Item("stop", "A konténer leállítása"))
+            items.append(Item("stop", "Stop the container"))
         return items, can_restore_db
 
     def _rollback(self, run: _Run, *, restore_db: bool) -> None:
@@ -720,7 +723,7 @@ class Installer:
                 layout.compose_env,
             )
         except DockerError as exc:
-            d.log.warning(f"Az új kiadás leállítása nem sikerült: {exc}")
+            d.log.warning(f"Stopping the new release failed: {exc}")
         if restore_db:
             assert prior.database is not None and run.backup_path is not None and d.db is not None
             d.db.restore(prior.database, run.backup_path)
@@ -740,12 +743,12 @@ class Installer:
         problem = self._up_and_wait(previous_run, prior_dir)
         if problem is not None:
             raise InstallFailed(
-                f"Az előző kiadás ({prior.version}) visszaállítása sem sikerült: {problem}"
+                f"Rolling back to the previous release ({prior.version}) failed as well: {problem}"
             )
-        d.log.info(f"Az előző kiadás ({prior.version}) visszaállítva.")
+        d.log.info(f"The previous release ({prior.version}) was restored.")
         raise InstallFailed(
-            f"A(z) {run.version} indítása sikertelen volt; az előző kiadás ({prior.version}) "
-            "visszaállítva és fut."
+            f"Starting {run.version} failed; the previous release ({prior.version}) "
+            "was restored and is running."
         )
 
     def _finalize(self, run: _Run, release_dir: Path) -> InstallResult:
@@ -779,7 +782,7 @@ class Installer:
         save_installs(registry_path, records)
 
         self._cleanup(run, info)
-        d.log.info(f"Kész: {manifest.name} {run.version} fut ({layout.root}).")
+        d.log.info(f"Done: {manifest.name} {run.version} is running ({layout.root}).")
         return InstallResult(
             version=str(run.version),
             port=run.port,
@@ -804,14 +807,14 @@ class Installer:
                 continue
             if Version.try_parse(name) is None or name in keep:
                 continue
-            log.info(f"Régi kiadás törlése: {name}")
+            log.info(f"Deleting old release: {name}")
             shutil.rmtree(path, ignore_errors=True)
             ref = f"{manifest.image_name}:{name}"
             try:
                 if self.d.docker.image_exists(ref):
                     self.d.docker.remove_image(ref)
             except DockerError as exc:
-                log.warning(f"A(z) {ref} kép törlése nem sikerült: {exc}")
+                log.warning(f"Deleting the image {ref} failed: {exc}")
 
     # ---------------------------------------------------------------------- restart
 
@@ -824,13 +827,15 @@ class Installer:
         with FileLock(self._lock_path()):
             info = load_install_info(target)
             if info is None:
-                raise TelepitoError("A célmappában nincs telepítés.")
+                raise TelepitoError("There is no installation in the target directory.")
             layout = Layout(target)
             release_dir = layout.release_dir(info.version)
             try:
                 manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
             except (OSError, ManifestError) as exc:
-                raise TelepitoError(f"A telepített kiadás leírója nem olvasható: {exc}") from exc
+                raise TelepitoError(
+                    f"The installed release's descriptor is unreadable: {exc}"
+                ) from exc
             compose_file = release_dir / manifest.compose_file
             try:
                 self.d.docker.compose_up(
@@ -879,9 +884,9 @@ class Installer:
         d = self.d
         info = load_install_info(target)
         if info is None:
-            raise TelepitoError("A célmappában nincs telepítés.")
+            raise TelepitoError("There is no installation in the target directory.")
         if version_text not in info.previous_versions:
-            raise TelepitoError(f"A(z) {version_text} nem szerepel a korábbi verziók között.")
+            raise TelepitoError(f"{version_text} is not among the previous versions.")
         layout = Layout(target)
         release_dir = layout.release_dir(version_text)
         version = Version.parse(version_text)
@@ -889,13 +894,13 @@ class Installer:
             manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
         except (OSError, ManifestError) as exc:
             raise TelepitoError(
-                f"A(z) {version_text} kiadás mappája hiányos ({exc}). Töltsd le újra a kiadást."
+                f"The directory of release {version_text} is incomplete ({exc}). Download the release again."
             ) from exc
         image_ref = f"{manifest.image_name}:{version.image_tag}"
         if not d.docker.image_exists(image_ref):
             raise TelepitoError(
-                f"A(z) {image_ref} kép már nincs meg a Dockerben. Töltsd le újra a kiadást "
-                "a Telepítés / frissítés menüpontban."
+                f"The image {image_ref} is no longer in Docker. Download the release again "
+                "through the Install / update menu."
             )
         migrations: tuple[str, ...] | None = None
         if manifest.migrations_asset is not None:
@@ -920,9 +925,9 @@ class Installer:
                 backups=backup_refs(layout.backups, info.database.name) if info.database else (),
             )
         )
-        d.ui.message(format_plan(plan), title="Visszaállítás", scroll=True)
+        d.ui.message(format_plan(plan), title="Roll back", scroll=True)
         if not plan.can_proceed:
-            raise TelepitoError("A visszaállítás nem végezhető el: " + "; ".join(plan.blockers))
+            raise TelepitoError("The rollback cannot be carried out: " + "; ".join(plan.blockers))
         self.confirm_plan(plan)
 
         port = info.port or manifest.port_default
@@ -940,7 +945,9 @@ class Installer:
         )
         if manifest.database is not None:
             if d.db is None or info.database is None:
-                raise TelepitoError("Az adatbázis-mentéshez nincs adatbázis-kezelő.")
+                raise TelepitoError(
+                    "A database backup needs database support, which is not set up."
+                )
             self._backup_database(run, info)
         self._write_compose_env(layout, manifest, version, port, info.database)
         return self._start_and_finalize(run, release_dir)
@@ -952,12 +959,12 @@ class Installer:
     ) -> None:
         asset: Asset | None = release.asset(name)
         if asset is None:
-            raise ReleaseError(f"A kiadásból hiányzik a(z) {name} melléklet.")
-        self.d.log.info(f"Letöltés: {name} ({asset.size} bájt)")
+            raise ReleaseError(f"The release has no {name} asset.")
+        self.d.log.info(f"Downloading {name} ({asset.size} bytes)")
         if not show_progress:
             self.d.github.download_asset(repo, asset, dest)
             return
-        with self.d.ui.progress("Letöltés", name) as bar:
+        with self.d.ui.progress("Download", name) as bar:
             self.d.github.download_asset(
                 repo,
                 asset,
@@ -970,7 +977,7 @@ class Installer:
     ) -> Path:
         expected = sums.get(name)
         if expected is None:
-            raise ReleaseError(f"A SHA256SUMS nem tartalmazza a(z) {name} összegét.")
+            raise ReleaseError(f"SHA256SUMS does not contain the sum of {name}.")
         path = directory / name
         self._download(repo, release, name, path)
         try:

@@ -57,9 +57,9 @@ CHUNK = 64 * 1024
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{8,255}$")
 _NEXT_LINK_RE = re.compile(r'<([^>]+)>\s*;\s*rel="next"')
 
-_MSG_UNAVAILABLE = "A GitHub nem elérhető (hálózati hiba vagy időtúllépés). Próbáld újra később."
-_MSG_AUTH = "A GitHub-token érvénytelen vagy lejárt. Add meg újra a Beállítások menüben."
-_MSG_DENIED = "A repó nem található, vagy a tokennek nincs hozzá jogosultsága."
+_MSG_UNAVAILABLE = "GitHub is unavailable (network error or timeout). Try again later."
+_MSG_AUTH = "The GitHub token is invalid or expired. Enter it again in the Settings menu."
+_MSG_DENIED = "The repository was not found, or the token has no access to it."
 
 
 class _Retry(Exception):
@@ -161,9 +161,9 @@ def token_expiry_warning(status: TokenStatus, now: datetime, *, days: int = 14) 
         return None
     remaining = status.expires_at - now
     if remaining <= timedelta(0):
-        return "A GitHub-token lejárt."
+        return "The GitHub token has expired."
     if remaining <= timedelta(days=days):
-        return f"A GitHub-token {remaining.days + 1} napon belül lejár. Készíts újat."
+        return f"The GitHub token expires within {remaining.days + 1} days. Create a new one."
     return None
 
 
@@ -217,7 +217,7 @@ class HttpGitHub(GitHub):
                     retry_after = max(0.0, float(reset) - self._clock())
             if code == 429 or retry_after is not None or remaining == "0":
                 error = GitHubRateLimited(
-                    "A GitHub korlátozta a kéréseket (rate limit). Próbáld újra később.",
+                    "GitHub is rate-limiting the requests (rate limit). Try again later.",
                     retry_after,
                 )
                 if retry_after is not None and retry_after <= MAX_RETRY_WAIT:
@@ -228,7 +228,7 @@ class HttpGitHub(GitHub):
             raise GitHubAccessDenied(_MSG_DENIED)
         if code >= 500:
             raise _Retry(GitHubUnavailable(_MSG_UNAVAILABLE))
-        raise GitHubError(f"Váratlan GitHub-válasz (HTTP {code}).")
+        raise GitHubError(f"Unexpected GitHub response (HTTP {code}).")
 
     def _attempt(
         self,
@@ -296,7 +296,7 @@ class HttpGitHub(GitHub):
         def read(resp: Any) -> bytes:
             data: bytes = resp.read(MAX_JSON_BYTES + 1)
             if len(data) > MAX_JSON_BYTES:
-                raise GitHubError("A GitHub-válasz váratlanul nagy.")
+                raise GitHubError("The GitHub response is unexpectedly large.")
             return data
 
         status, headers, body = self._call(
@@ -320,7 +320,7 @@ class HttpGitHub(GitHub):
 
     def _repo_url(self, repo: str) -> str:
         if not is_repo(repo):
-            raise GitHubError(f"Érvénytelen repó: {repo!r}")
+            raise GitHubError(f"Invalid repository: {repo!r}")
         return f"{self._api_base}/repos/{repo}"
 
     # ------------------------------------------------------------------ interface
@@ -342,7 +342,7 @@ class HttpGitHub(GitHub):
             releases.extend(_parse_releases(entry.body))
             url = self._next_link(entry.link)
         else:
-            raise GitHubError("Túl sok oldal a release-listában.")
+            raise GitHubError("Too many pages in the release list.")
         return _sort_releases(releases)
 
     def latest_stable(self, repo: str) -> Release | None:
@@ -395,7 +395,7 @@ class HttpGitHub(GitHub):
             return None
         target = match.group(1)
         if urlsplit(target).netloc.lower() != self._api_host:
-            raise GitHubError("A GitHub lapozó hivatkozása idegen hosztra mutat; megszakítva.")
+            raise GitHubError("The GitHub pagination link points to a foreign host; aborted.")
         return target
 
 
@@ -416,9 +416,9 @@ def _parse_releases(body: bytes) -> list[Release]:
     try:
         data = json.loads(body)
     except ValueError as exc:
-        raise GitHubError("A GitHub válasza nem értelmezhető.") from exc
+        raise GitHubError("The GitHub response cannot be understood.") from exc
     if not isinstance(data, list):
-        raise GitHubError("A GitHub válasza nem értelmezhető.")
+        raise GitHubError("The GitHub response cannot be understood.")
     result: list[Release] = []
     for item in data:
         if not isinstance(item, dict) or item.get("draft"):

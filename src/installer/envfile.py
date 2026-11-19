@@ -26,11 +26,11 @@ class EnvFileError(TelepitoError):
 
 def validate_pair(key: str, value: str) -> None:
     if not is_env_name(key):
-        raise EnvFileError(f"Érvénytelen környezeti változónév: {key!r}")
+        raise EnvFileError(f"Invalid environment variable name: {key!r}")
     for char in _FORBIDDEN:
         if char in value:
             raise EnvFileError(
-                f"A(z) {key} értéke nem tartalmazhat aposztrófot, sortörést vagy NUL karaktert."
+                f"The value of {key} must not contain an apostrophe, a line break or a NUL character."
             )
 
 

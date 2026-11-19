@@ -110,12 +110,12 @@ class RetentionTests(BackupTestCase):
         self.assertFalse(good.exists())
         self.assertTrue(stranger.exists())
         self.assertTrue(outside.exists())
-        self.assertTrue(any("kihagyva" in line for line in self.log.records))
+        self.assertTrue(any("skipped" in line for line in self.log.records))
 
     def test_every_deletion_is_logged(self) -> None:
         self.make("investment-0.1.0-20200101T000000Z.dump", age_days=800)
         delete_backups(self.dir, list_backups(self.dir), self.log)
-        self.assertTrue(any("törölve: investment-0.1.0" in line for line in self.log.records))
+        self.assertTrue(any("deleted: investment-0.1.0" in line for line in self.log.records))
 
     def test_nothing_old_means_no_question(self) -> None:
         self.make("investment-0.1.0-20261101T000000Z.dump", age_days=5)
@@ -132,9 +132,9 @@ class RetentionTests(BackupTestCase):
         ui = ScriptedUi(["later"])
         offer_retention(ui, self.log, self.dir, auto_delete=False, now=NOW)
         text = ui.calls[0].text
-        self.assertIn("1 mentés", text)
-        self.assertIn("3,0 MB", text)
-        self.assertIn("egy évnél régebbi", text)
+        self.assertIn("1 backup(s)", text)
+        self.assertIn("3.0 MB", text)
+        self.assertIn("older than a year", text)
 
     def test_choices(self) -> None:
         path = self.old_setup()

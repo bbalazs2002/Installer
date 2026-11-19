@@ -37,7 +37,7 @@ MANIFEST: dict[str, Any] = {
     "health": {"path": "/healthz", "timeoutSeconds": 10, "versionField": "version"},
     "database": {
         "required": True,
-        "description": "Postgres kell.",
+        "description": "Postgres is needed.",
         "urlEnv": "DATABASE_URL",
         "urlTemplate": "postgresql://{user}:{password}@{host}:{port}/{database}",
     },
@@ -54,7 +54,7 @@ MANIFEST: dict[str, Any] = {
         },
     ],
     "proxy": {"snippet": 'ProxyPass "/investment/" "http://127.0.0.1:{port}/"'},
-    "postInstall": ["Hozz létre felhasználót"],
+    "postInstall": ["Create a user"],
     "keep": 2,
 }
 

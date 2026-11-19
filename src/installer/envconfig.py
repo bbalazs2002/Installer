@@ -52,9 +52,9 @@ class EnvConfigurator(ABC):
 def check_value(item: EnvVar, value: str) -> str | None:
     """Return an error message if ``value`` is not acceptable for ``item``, else ``None``."""
     if item.min_length is not None and len(value) < item.min_length:
-        return f"A(z) {item.name} legalább {item.min_length} karakter kell legyen."
+        return f"{item.name} must be at least {item.min_length} characters long."
     if item.validate is not None and re.fullmatch(item.validate, value) is None:
-        return f"A(z) {item.name} értéke nem felel meg a megadott formátumnak."
+        return f"The value of {item.name} does not match the required format."
     try:
         validate_pair(item.name, value)
     except TelepitoError as exc:
@@ -109,6 +109,6 @@ class DefaultEnvConfigurator(EnvConfigurator):
             return generate_secret(item.generate_bytes)
         if item.required:
             raise EnvConfigError(
-                f"A(z) {item.name} kötelező, de nincs alapértéke, és nem generálható."
+                f"{item.name} is required, but it has no default and cannot be generated."
             )
         return None

@@ -23,7 +23,7 @@ def _inside(child: str, parent: str) -> bool:
 
 def sudo_hint(path: str) -> str:
     return (
-        "Hozd létre root jogosultsággal, majd próbáld újra:\n"
+        "Create it with root privileges, then try again:\n"
         f"  sudo mkdir -p {path} && sudo chown $USER {path} && sudo chmod 2775 {path}"
     )
 
@@ -44,31 +44,31 @@ def validate_target(
     """
     raw = text.strip()
     if not raw:
-        return TargetCheck(None, "Adj meg egy mappát.")
+        return TargetCheck(None, "Enter a directory.")
     if not os.path.isabs(raw):
-        return TargetCheck(None, "Abszolút útvonal kell (a / jellel kezdődjön).")
+        return TargetCheck(None, "An absolute path is required (starting with /).")
     real = os.path.realpath(raw)
     anchor = os.path.realpath(os.sep)
     if os.path.normcase(real) == os.path.normcase(anchor):
-        return TargetCheck(None, "A gyökérmappa nem lehet célmappa.")
+        return TargetCheck(None, "The root directory cannot be the target.")
 
     own = os.path.realpath(own_path) if own_path else None
     state_real = os.path.realpath(state_dir)
     if _inside(real, state_real) or _inside(state_real, real):
-        return TargetCheck(None, "A telepítő saját mappája nem lehet célmappa.")
+        return TargetCheck(None, "The installer's own directory cannot be the target.")
     for record in registry:
         other = os.path.realpath(record.path)
         if own is not None and os.path.normcase(other) == os.path.normcase(own):
             continue
         if _inside(real, other) or _inside(other, real):
             return TargetCheck(
-                None, f"Ütközik egy másik telepítéssel ({record.name}: {record.path})."
+                None, f"Conflicts with another installation ({record.name}: {record.path})."
             )
 
     if not os.path.exists(real):
-        return TargetCheck(None, f"A mappa nem létezik: {raw}\n{sudo_hint(raw)}")
+        return TargetCheck(None, f"The directory does not exist: {raw}\n{sudo_hint(raw)}")
     if not os.path.isdir(real):
-        return TargetCheck(None, "Ez nem mappa.")
+        return TargetCheck(None, "This is not a directory.")
     if not os.access(real, os.W_OK | os.X_OK):
-        return TargetCheck(None, f"A mappa nem írható: {raw}\n{sudo_hint(raw)}")
+        return TargetCheck(None, f"The directory is not writable: {raw}\n{sudo_hint(raw)}")
     return TargetCheck(Path(real))

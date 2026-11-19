@@ -110,20 +110,22 @@ def delete_backups(directory: Path, files: Sequence[BackupFile], log: Logger) ->
             or path.is_symlink()
             or not path.is_file()
         ):
-            log.warning(f"Mentés törlése kihagyva (nem a mentési mappa szabályos fájlja): {path}")
+            log.warning(
+                f"Backup deletion skipped (not a regular file of the backup directory): {path}"
+            )
             continue
         try:
             path.unlink()
         except OSError as exc:
-            log.warning(f"A(z) {path.name} mentés törlése nem sikerült: {exc}")
+            log.warning(f"Deleting the backup {path.name} failed: {exc}")
             continue
-        log.info(f"Régi mentés törölve: {path.name} ({item.size} bájt)")
+        log.info(f"Old backup deleted: {path.name} ({item.size} bytes)")
         removed += 1
     return removed
 
 
 def _megabytes(size: int) -> str:
-    return f"{size / 2**20:.1f}".replace(".", ",")
+    return f"{size / 2**20:.1f}"
 
 
 def offer_retention(
@@ -150,13 +152,13 @@ def offer_retention(
 
     total = sum(f.size for f in old)
     choice = ui.menu(
-        "Régi adatbázis-mentések",
+        "Old database backups",
         [
-            Item("now", "Törlés most"),
-            Item("later", "Most nem"),
-            Item("always", "Törlés most, és mindig töröld az egy évnél régebbieket"),
+            Item("now", "Delete now"),
+            Item("later", "Not now"),
+            Item("always", "Delete now, and always delete the ones older than a year"),
         ],
-        text=f"{len(old)} mentés (összesen {_megabytes(total)} MB) egy évnél régebbi. Törlöd őket?",
+        text=f"{len(old)} backup(s) (total {_megabytes(total)} MB) are older than a year. Delete them?",
         default="now",
     )
     if choice == "later":

@@ -63,4 +63,4 @@ def atomic_symlink(link: Path, target: str) -> None:
                 os.unlink(tmp)
             raise
         return
-    raise FileExistsError(f"Nem hozható létre ideiglenes link: {link}")
+    raise FileExistsError(f"Cannot create a temporary link: {link}")

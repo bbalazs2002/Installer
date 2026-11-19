@@ -45,7 +45,7 @@ class FakeDocker(Docker):
     def _record(self, name: str, *args: object) -> None:
         self.calls.append((name, args))
         if name in self.fail:
-            raise DockerError(f"fake {name} hiba")
+            raise DockerError(f"fake {name} error")
 
     def names(self) -> list[str]:
         return [name for name, _ in self.calls]
@@ -65,7 +65,7 @@ class FakeDocker(Docker):
     def inspect_container(self, name: str) -> ContainerInfo:
         self._record("inspect_container", name)
         if name not in self.containers:
-            raise DockerError(f"Nincs ilyen konténer: {name}")
+            raise DockerError(f"No such container: {name}")
         return self.containers[name]
 
     def image_exists(self, reference: str) -> bool:

@@ -52,7 +52,7 @@ class BasicTests(CliTestCase):
     def test_menu_needs_an_interactive_terminal(self) -> None:
         code, _, err = self.run_cli()
         self.assertEqual(code, 3)
-        self.assertIn("interaktív terminál", err)
+        self.assertIn("interactive terminal", err)
 
     def test_menu_runs_with_an_injected_ui_and_quits(self) -> None:
         code, _, _ = self.run_cli(ui=ScriptedUi(["quit"]))
@@ -76,7 +76,7 @@ class StatusTests(CliTestCase):
     def test_status_without_installations(self) -> None:
         code, out, _ = self.run_cli("status")
         self.assertEqual(code, 0)
-        self.assertIn("Még nincs telepített alkalmazás", out)
+        self.assertIn("There are no installed applications yet", out)
 
     def test_status_json_has_no_secrets(self) -> None:
         self.run_install("0.1.0")
@@ -95,7 +95,7 @@ class StatusTests(CliTestCase):
         self.run_install("0.1.0")
         _, out, _ = self.run_cli("status")
         self.assertIn("investment  0.1.0", out)
-        self.assertIn("állapot: ok", out)
+        self.assertIn("status: ok", out)
 
     def test_status_never_asks_a_question(self) -> None:
         # The batch UI raises on any question; status must therefore never need one.
@@ -106,7 +106,7 @@ class StatusTests(CliTestCase):
 class UpdatesTests(CliTestCase):
     def test_updates_lists_available_and_current(self) -> None:
         self.run_install("0.1.0")
-        self.assertIn("naprakész", self.run_cli("updates")[1])
+        self.assertIn("up to date", self.run_cli("updates")[1])
         self.publish("0.2.0")
         code, out, _ = self.run_cli("updates")
         self.assertEqual(code, 0)
@@ -117,7 +117,7 @@ class UpdatesTests(CliTestCase):
         self.tokens.delete()
         code, _, err = self.run_cli("updates")
         self.assertEqual(code, 1)
-        self.assertIn("Nincs GitHub-token", err)
+        self.assertIn("No GitHub token", err)
 
 
 class PlanTests(CliTestCase):
@@ -125,8 +125,8 @@ class PlanTests(CliTestCase):
         self.publish("0.1.0")
         code, out, _ = self.run_cli("plan", REPO, "0.1.0", str(self.target))
         self.assertEqual(code, 0)
-        self.assertIn("Új telepítés", out)
-        self.assertIn("Lépések:", out)
+        self.assertIn("New installation", out)
+        self.assertIn("Steps:", out)
         self.assertIsNone(load_install_info(self.target))
         self.assertEqual(self.docker.names().count("compose_up"), 0)
         self.assertEqual(self.docker.names().count("load_image"), 0)
@@ -137,23 +137,23 @@ class PlanTests(CliTestCase):
         self.publish("0.2.0")
         code, out, _ = self.run_cli("plan", REPO, "v0.2.0", str(self.target))
         self.assertEqual(code, 0)
-        self.assertIn("Ez frissítés, nem új telepítés: 0.1.0 → 0.2.0", out)
+        self.assertIn("This is an update, not a new installation: 0.1.0 → 0.2.0", out)
 
     def test_blocked_plan_exits_nonzero(self) -> None:
         (self.target / "stranger.txt").write_text("x", encoding="utf-8")
         self.publish("0.1.0")
         code, out, _ = self.run_cli("plan", REPO, "0.1.0", str(self.target))
         self.assertEqual(code, 1)
-        self.assertIn("Akadályok:", out)
+        self.assertIn("Blockers:", out)
 
     def test_unknown_version_and_garbage(self) -> None:
         self.publish("0.1.0")
         code, _, err = self.run_cli("plan", REPO, "9.9.9", str(self.target))
         self.assertEqual(code, 1)
-        self.assertIn("nem található", err)
+        self.assertIn("was not found", err)
         code, _, err = self.run_cli("plan", REPO, "not-a-version", str(self.target))
         self.assertEqual(code, 1)
-        self.assertIn("Érvénytelen verzió", err)
+        self.assertIn("Invalid version", err)
 
 
 if __name__ == "__main__":

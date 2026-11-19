@@ -22,15 +22,15 @@ class GitHubError(TelepitoError):
 
 
 class GitHubUnavailable(GitHubError):
-    """Network failure, timeout or 5xx after retries (\"GitHub nem elérhető\")."""
+    """Network failure, timeout or 5xx after retries (\"GitHub is unavailable\")."""
 
 
 class GitHubAuthError(GitHubError):
-    """Missing, invalid or expired token (\"A token lejárt\")."""
+    """Missing, invalid or expired token (\"The token has expired\")."""
 
 
 class GitHubAccessDenied(GitHubError):
-    """The token has no access to the repository (\"A repóhoz nincs jog\")."""
+    """The token has no access to the repository (\"No access to the repository\")."""
 
 
 class GitHubRateLimited(GitHubError):

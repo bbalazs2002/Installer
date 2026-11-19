@@ -65,7 +65,7 @@ def manifest() -> Manifest:
             "health": {"path": "/healthz"},
             "database": {
                 "required": True,
-                "description": "Az alkalmazás Postgresben tárolja az adatokat.",
+                "description": "The application stores its data in Postgres.",
                 "urlEnv": "DATABASE_URL",
                 "urlTemplate": "postgresql://{user}:{password}@{host}:{port}/{database}",
                 "defaultDatabase": "investment",
@@ -138,7 +138,7 @@ class QuotingTests(unittest.TestCase):
 
     def test_password_validation(self) -> None:
         self.assertIsNone(validate_password("Abcdef12!@#"))
-        for bad in ["short", "has space 123", "ékezetes-jelszó-1", "x" * 200, "tab\tbed12345"]:
+        for bad in ["short", "has space 123", "accénted-pässword-1", "x" * 200, "tab\tbed12345"]:
             with self.subTest(password=bad):
                 self.assertIsNotNone(validate_password(bad))
 
@@ -201,9 +201,9 @@ class ChooseServerTests(unittest.TestCase):
 
     def test_none_found_explains_why_a_database_is_needed(self) -> None:
         with self.assertRaises(PostgresError) as ctx:
-            choose_server(ScriptedUi(), [], "Postgres kell az adatokhoz.")
-        self.assertIn("Nem található futó Postgres-konténer", str(ctx.exception))
-        self.assertIn("Postgres kell az adatokhoz.", str(ctx.exception))
+            choose_server(ScriptedUi(), [], "Postgres is needed for the data.")
+        self.assertIn("No running Postgres container found", str(ctx.exception))
+        self.assertIn("Postgres is needed for the data.", str(ctx.exception))
 
     def test_single_container_needs_confirmation(self) -> None:
         ui = ScriptedUi([True, D, D])  # confirm, host default, admin default
@@ -244,7 +244,7 @@ class ChooseServerTests(unittest.TestCase):
         )
         ui = Spy(["database-postgres-1", D, D])
         choose_server(ui, self.containers(other, pg_container()), "")
-        self.assertEqual(recorded["Adatbázis-kiszolgáló"], "database-postgres-1")
+        self.assertEqual(recorded["Database server"], "database-postgres-1")
 
     def test_network_choice_when_on_several(self) -> None:
         multi = pg_container(networks={"shared-infra": ("postgres",), "pub_default": ("pgdb",)})
@@ -379,7 +379,7 @@ class CreateTests(OpsTestCase):
 
     def test_description_is_shown_first(self) -> None:
         self.create([True, D, D, D, D, "generate"])
-        self.assertIn("Az alkalmazás Postgresben", self.ui.messages()[0])
+        self.assertIn("The application stores", self.ui.messages()[0])
 
     def test_manual_password(self) -> None:
         setup = self.create([True, D, D, D, D, "manual", "Hunter2-Hunter2", "Hunter2-Hunter2"])
@@ -436,7 +436,7 @@ class CreateTests(OpsTestCase):
         self.docker.exec_handler = fail_login
         with self.assertRaises(PostgresError) as ctx:
             self.create([True, D, D, D, D, "generate"])
-        self.assertIn("bejelentkezési próba", str(ctx.exception))
+        self.assertIn("login test", str(ctx.exception))
 
     def test_no_postgres_container(self) -> None:
         self.docker.containers = {}
@@ -458,7 +458,7 @@ class CreateTests(OpsTestCase):
             self.docker, self.ui, self.log, vault_provider=lambda: None, clock=lambda: NOW
         )
         self.create([True, D, D, D, D, "generate"])
-        self.assertTrue(any("jelszótárba" in m for m in self.ui.messages()))
+        self.assertTrue(any("not saved to the vault" in m for m in self.ui.messages()))
 
 
 class BackupTests(OpsTestCase):
@@ -494,7 +494,7 @@ class BackupTests(OpsTestCase):
         self.ui.push(True)
         self.assertIsNone(self.ops.backup(self.INFO, "0.1.0", self.dir / "backups"))
         confirm = next(c for c in self.ui.calls if c.kind == "confirm")
-        self.assertIn("mentés nélkül", confirm.text)
+        self.assertIn("without a backup", confirm.text)
 
     def test_empty_or_unreadable_dump_counts_as_failure(self) -> None:
         self.docker.exec_results = [ExecResult(0, b"")]  # empty output

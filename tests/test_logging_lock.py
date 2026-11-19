@@ -41,11 +41,11 @@ class LoggerTests(unittest.TestCase):
         r.register("s3cr3t-value")
         fixed = datetime(2026, 11, 19, 8, 30, tzinfo=timezone.utc)
         log = Logger(self.dir, r, clock=lambda: fixed)
-        log.info("jelszó: s3cr3t-value")
+        log.info("password: s3cr3t-value")
         log.output("line one\nline two with s3cr3t-value")
         content = (self.dir / "2026-11-19.log").read_text(encoding="utf-8")
         self.assertNotIn("s3cr3t-value", content)
-        self.assertIn("2026-11-19T08:30:00Z INFO  jelszó: ***", content)
+        self.assertIn("2026-11-19T08:30:00Z INFO  password: ***", content)
         self.assertEqual(len(content.splitlines()), 3)
 
     def test_secret_registered_later_is_masked_from_then_on(self) -> None:

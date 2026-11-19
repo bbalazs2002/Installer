@@ -58,7 +58,7 @@ class FakeProcess:
         return 0
 
 
-ITEMS = [Item("a", "Alma"), Item("b", "Barack", "gyümölcs")]
+ITEMS = [Item("a", "Apple"), Item("b", "Peach", "fruit")]
 
 
 class WhiptailTestCase(unittest.TestCase):
@@ -74,31 +74,31 @@ class WhiptailTestCase(unittest.TestCase):
 class MenuTests(WhiptailTestCase):
     def test_menu_arguments_and_result(self) -> None:
         self.runner.push(0, "b\n")
-        self.assertEqual(self.ui.menu("Cím", ITEMS, text="Válassz", default="b"), "b")
+        self.assertEqual(self.ui.menu("Title", ITEMS, text="Choose", default="b"), "b")
         cmd = self.command
         self.assertEqual(cmd[:3], ["whiptail", "--backtitle", BACKTITLE])
         self.assertIn("--notags", cmd)
         self.assertEqual(cmd[cmd.index("--default-item") + 1], "b")
         tail = cmd[cmd.index("--menu") :]
-        self.assertEqual(tail[1], "Válassz")
-        self.assertEqual(tail[5:], ["a", "Alma", "b", "Barack - gyümölcs"])
+        self.assertEqual(tail[1], "Choose")
+        self.assertEqual(tail[5:], ["a", "Apple", "b", "Peach - fruit"])
 
     def test_cancel_and_escape_go_back(self) -> None:
         for code in (1, 255):
             self.runner.push(code)
             with self.subTest(code=code), self.assertRaises(UiBack):
-                self.ui.menu("Cím", ITEMS)
+                self.ui.menu("Title", ITEMS)
 
     def test_unknown_default_is_ignored(self) -> None:
         self.runner.push(0, "a")
-        self.ui.menu("Cím", ITEMS, default="zzz")
+        self.ui.menu("Title", ITEMS, default="zzz")
         self.assertNotIn("--default-item", self.command)
 
     def test_dialog_stays_inside_the_terminal(self) -> None:
         many = [Item(str(i), f"item {i}") for i in range(200)]
         self.runner.push(0, "1")
         ui = WhiptailUi(runner=self.runner, terminal=lambda: (80, 24))
-        ui.menu("Cím", many, text="x")
+        ui.menu("Title", many, text="x")
         cmd = self.command
         i = cmd.index("--menu")
         height, width, rows = (int(v) for v in cmd[i + 2 : i + 5])
@@ -108,62 +108,62 @@ class MenuTests(WhiptailTestCase):
 
     def test_leading_dash_in_text_is_not_an_option(self) -> None:
         self.runner.push(0, "a")
-        self.ui.menu("Cím", ITEMS, text="--help")
+        self.ui.menu("Title", ITEMS, text="--help")
         self.assertEqual(self.command[self.command.index("--menu") + 1], " --help")
 
 
 class ChoiceTests(WhiptailTestCase):
     def test_radiolist_marks_the_default(self) -> None:
         self.runner.push(0, "b")
-        self.assertEqual(self.ui.choose("Cím", ITEMS, default="b"), "b")
+        self.assertEqual(self.ui.choose("Title", ITEMS, default="b"), "b")
         cmd = self.command
         tail = cmd[cmd.index("--radiolist") + 5 :]
-        self.assertEqual(tail, ["a", "Alma", "OFF", "b", "Barack - gyümölcs", "ON"])
+        self.assertEqual(tail, ["a", "Apple", "OFF", "b", "Peach - fruit", "ON"])
 
     def test_radiolist_defaults_to_the_selected_item_then_the_first(self) -> None:
         self.runner.push(0, "a")
-        self.ui.choose("Cím", [Item("a", "A"), Item("b", "B", selected=True)])
+        self.ui.choose("Title", [Item("a", "A"), Item("b", "B", selected=True)])
         tail = self.command[self.command.index("--radiolist") + 5 :]
         self.assertEqual(tail[2::3], ["OFF", "ON"])
 
     def test_checklist_parses_one_value_per_line(self) -> None:
         self.runner.push(0, "a\nb\n")
-        self.assertEqual(self.ui.choose_many("Cím", ITEMS), ["a", "b"])
+        self.assertEqual(self.ui.choose_many("Title", ITEMS), ["a", "b"])
         self.assertIn("--separate-output", self.command)
 
     def test_empty_checklist_selection(self) -> None:
         self.runner.push(0, "")
-        self.assertEqual(self.ui.choose_many("Cím", ITEMS), [])
+        self.assertEqual(self.ui.choose_many("Title", ITEMS), [])
 
 
 class InputTests(WhiptailTestCase):
     def test_text_with_default(self) -> None:
         self.runner.push(0, "hello world\n")
-        self.assertEqual(self.ui.text("Kérdés", title="T", default="alap"), "hello world")
+        self.assertEqual(self.ui.text("Question", title="T", default="preset"), "hello world")
         cmd = self.command
         i = cmd.index("--inputbox")
-        self.assertEqual(cmd[i + 1], "Kérdés")
-        self.assertEqual(cmd[-1], "alap")
+        self.assertEqual(cmd[i + 1], "Question")
+        self.assertEqual(cmd[-1], "preset")
 
     def test_text_cancel(self) -> None:
         self.runner.push(1)
         with self.assertRaises(UiBack):
-            self.ui.text("Kérdés")
+            self.ui.text("Question")
 
     def test_secret_never_appears_in_arguments(self) -> None:
         self.runner.push(0, "s3cr3t-value\n")
-        self.assertEqual(self.ui.secret("Jelszó:"), "s3cr3t-value")
+        self.assertEqual(self.ui.secret("Password:"), "s3cr3t-value")
         self.assertIn("--passwordbox", self.command)
         self.assertNotIn("s3cr3t-value", " ".join(self.command))
 
     def test_secret_keeps_inner_whitespace(self) -> None:
         self.runner.push(0, " a b \n")
-        self.assertEqual(self.ui.secret("Jelszó:"), " a b ")
+        self.assertEqual(self.ui.secret("Password:"), " a b ")
 
     def test_secret_cancel(self) -> None:
         self.runner.push(255)
         with self.assertRaises(UiBack):
-            self.ui.secret("Jelszó:")
+            self.ui.secret("Password:")
 
 
 class ConfirmTests(WhiptailTestCase):
@@ -171,36 +171,36 @@ class ConfirmTests(WhiptailTestCase):
         self.runner.push(0)
         self.runner.push(1)
         self.runner.push(255)
-        self.assertTrue(self.ui.confirm("Biztos?"))
-        self.assertFalse(self.ui.confirm("Biztos?"))
+        self.assertTrue(self.ui.confirm("Sure?"))
+        self.assertFalse(self.ui.confirm("Sure?"))
         with self.assertRaises(UiBack):
-            self.ui.confirm("Biztos?")
+            self.ui.confirm("Sure?")
 
     def test_default_no_is_the_safe_default(self) -> None:
         self.runner.push(0)
-        self.ui.confirm("Biztos?")
+        self.ui.confirm("Sure?")
         self.assertIn("--defaultno", self.command)
         self.runner.push(0)
-        self.ui.confirm("Biztos?", default=True)
+        self.ui.confirm("Sure?", default=True)
         self.assertNotIn("--defaultno", self.command)
 
-    def test_hungarian_buttons(self) -> None:
+    def test_english_buttons(self) -> None:
         self.runner.push(0)
-        self.ui.confirm("Biztos?")
+        self.ui.confirm("Sure?")
         cmd = self.command
-        self.assertEqual(cmd[cmd.index("--yes-button") + 1], "Igen")
-        self.assertEqual(cmd[cmd.index("--no-button") + 1], "Nem")
+        self.assertEqual(cmd[cmd.index("--yes-button") + 1], "Yes")
+        self.assertEqual(cmd[cmd.index("--no-button") + 1], "No")
 
 
 class MessageTests(WhiptailTestCase):
     def test_plain_message(self) -> None:
         self.runner.push(0)
-        self.ui.message("Kész", title="T")
+        self.ui.message("Done", title="T")
         self.assertIn("--msgbox", self.command)
 
     def test_escape_on_a_message_is_harmless(self) -> None:
         self.runner.push(255)
-        self.ui.message("Kész")
+        self.ui.message("Done")
 
     def test_scrollable_text_goes_through_a_temporary_file_that_is_removed(self) -> None:
         seen: dict[str, str] = {}
@@ -212,8 +212,8 @@ class MessageTests(WhiptailTestCase):
 
         self.runner.on_call = inspect
         self.runner.push(0)
-        self.ui.message("sor 1\nsor 2", title="T", scroll=True)
-        self.assertEqual(seen["content"], "sor 1\nsor 2")
+        self.ui.message("line 1\nline 2", title="T", scroll=True)
+        self.assertEqual(seen["content"], "line 1\nline 2")
         self.assertIn("--scrolltext", self.command)
         self.assertFalse(Path(seen["path"]).exists())
 
@@ -240,12 +240,12 @@ class ProgressTests(WhiptailTestCase):
             return process
 
         ui = WhiptailUi(runner=self.runner, popen=popen, terminal=lambda: (100, 30))  # type: ignore[arg-type]
-        with ui.progress("Letöltés", "kezdés") as bar:
-            bar.update(40, "fél úton")
+        with ui.progress("Download", "starting") as bar:
+            bar.update(40, "halfway")
             bar.update(250)  # clamped
         self.assertIn("--gauge", commands[0])
         written = process.stdin.data.decode()
-        self.assertIn("XXX\n40\nfél úton\nXXX\n", written)
+        self.assertIn("XXX\n40\nhalfway\nXXX\n", written)
         self.assertIn("XXX\n100\n\nXXX\n", written)
         self.assertTrue(process.waited)
 
@@ -275,7 +275,7 @@ class MissingWhiptailTests(unittest.TestCase):
 
         ui = WhiptailUi(runner=runner, terminal=lambda: (80, 24))
         with self.assertRaises(PrerequisiteError) as ctx:
-            ui.menu("Cím", ITEMS)
+            ui.menu("Title", ITEMS)
         self.assertIn("apt install whiptail", str(ctx.exception))
 
     def test_progress_without_whiptail(self) -> None:

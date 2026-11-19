@@ -3,7 +3,7 @@ import unittest
 from installer.ui.base import Item, UiBack, ask_validated
 from installer.ui.scripted import ScriptedUi
 
-ITEMS = [Item("a", "Alma"), Item("b", "Barack")]
+ITEMS = [Item("a", "Apple"), Item("b", "Peach")]
 
 
 class ScriptedUiTests(unittest.TestCase):
@@ -19,11 +19,11 @@ class ScriptedUiTests(unittest.TestCase):
 
     def test_calls_are_recorded_without_answers(self) -> None:
         ui = ScriptedUi(["pw"])
-        ui.secret("Jelszó:")
-        ui.message("Kész", title="T")
+        ui.secret("Password:")
+        ui.message("Done", title="T")
         self.assertEqual([c.kind for c in ui.calls], ["secret", "message"])
         self.assertNotIn("pw", repr(ui.calls))
-        self.assertEqual(ui.messages(), ["Kész"])
+        self.assertEqual(ui.messages(), ["Done"])
 
     def test_back_class_and_instance(self) -> None:
         ui = ScriptedUi([UiBack, UiBack()])
@@ -42,21 +42,21 @@ class ScriptedUiTests(unittest.TestCase):
 
     def test_progress_records_updates(self) -> None:
         ui = ScriptedUi()
-        with ui.progress("Letöltés") as bar:
+        with ui.progress("Download") as bar:
             bar.update(10)
-            bar.update(100, "kész")
-        self.assertEqual(ui.progress_updates, [(10, None), (100, "kész")])
+            bar.update(100, "done")
+        self.assertEqual(ui.progress_updates, [(10, None), (100, "done")])
 
     def test_ask_validated_repeats_until_valid(self) -> None:
         ui = ScriptedUi(["bad", "also bad", "good"])
-        result = ask_validated(ui, "név?", lambda v: None if v == "good" else "hibás")
+        result = ask_validated(ui, "name?", lambda v: None if v == "good" else "invalid")
         self.assertEqual(result, "good")
-        self.assertEqual(ui.messages(), ["hibás", "hibás"])
+        self.assertEqual(ui.messages(), ["invalid", "invalid"])
 
     def test_ask_validated_secret_uses_secret_prompt_only(self) -> None:
         ui = ScriptedUi(["x", "longenough"])
         result = ask_validated(
-            ui, "jelszó", lambda v: None if len(v) >= 5 else "rövid", secret=True
+            ui, "password", lambda v: None if len(v) >= 5 else "too short", secret=True
         )
         self.assertEqual(result, "longenough")
         self.assertTrue(all(c.kind in ("secret", "message") for c in ui.calls))

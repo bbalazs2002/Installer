@@ -33,11 +33,11 @@ def _load_json(path: Path) -> Any | None:
     except FileNotFoundError:
         return None
     except (OSError, UnicodeDecodeError) as exc:
-        raise StateError(f"A(z) {path} nem olvasható: {exc}") from exc
+        raise StateError(f"{path} cannot be read: {exc}") from exc
     try:
         return json.loads(raw)
     except ValueError as exc:
-        raise StateError(f"A(z) {path} nem érvényes JSON: {exc}") from exc
+        raise StateError(f"{path} is not valid JSON: {exc}") from exc
 
 
 def _dump(data: dict[str, Any]) -> str:
@@ -46,14 +46,14 @@ def _dump(data: dict[str, Any]) -> str:
 
 def _check_schema(data: Any, path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
-        raise StateError(f"A(z) {path} formátuma ismeretlen (objektum kellene).")
+        raise StateError(f"The format of {path} is unknown (an object was expected).")
     version = data.get("schemaVersion")
     if isinstance(version, bool) or not isinstance(version, int):
-        raise StateError(f"A(z) {path} schemaVersion mezője hiányzik vagy érvénytelen.")
+        raise StateError(f"The schemaVersion field of {path} is missing or invalid.")
     if version > SCHEMA_VERSION:
         raise StateError(
-            f"A(z) {path} újabb formátumú ({version}), mint amit ez a telepítő ismer. "
-            "Frissítsd a telepítőt."
+            f"{path} has a newer format ({version}) than this installer knows. "
+            "Update the installer."
         )
     return data
 
@@ -63,14 +63,14 @@ def _str(data: dict[str, Any], key: str, path: Path, *, optional: bool = False) 
     if value is None and optional:
         return None
     if not isinstance(value, str) or not value:
-        raise StateError(f"A(z) {path} fájlban a(z) {key} mező hiányzik vagy érvénytelen.")
+        raise StateError(f"In {path} the field {key} is missing or invalid.")
     return value
 
 
 def _str_list(data: dict[str, Any], key: str, path: Path) -> list[str]:
     value = data.get(key, [])
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-        raise StateError(f"A(z) {path} fájlban a(z) {key} mezőnek szövegek listájának kell lennie.")
+        raise StateError(f"In {path} the field {key} must be a list of strings.")
     return list(value)
 
 
@@ -91,15 +91,15 @@ def load_repos(path: Path) -> list[KnownRepo]:
     data = _check_schema(raw, path)
     items = data.get("repos", [])
     if not isinstance(items, list):
-        raise StateError(f"A(z) {path} repos mezőjének listának kell lennie.")
+        raise StateError(f"The repos field of {path} must be a list.")
     result: list[KnownRepo] = []
     for item in items:
         if not isinstance(item, dict):
-            raise StateError(f"A(z) {path} egyik eleme nem objektum.")
+            raise StateError(f"{path} contains an item that is not an object.")
         repo = _str(item, "repo", path)
         assert repo is not None
         if not is_repo(repo):
-            raise StateError(f"A(z) {path} fájlban érvénytelen repó: {repo!r}")
+            raise StateError(f"Invalid repository in {path}: {repo!r}")
         default_path = _str(item, "defaultPath", path, optional=True)
         result.append(KnownRepo(repo, default_path))
     return result
@@ -133,7 +133,7 @@ class InstallRecord:
 
 def _record_from_dict(item: Any, path: Path) -> InstallRecord:
     if not isinstance(item, dict):
-        raise StateError(f"A(z) {path} egyik eleme nem objektum.")
+        raise StateError(f"{path} contains an item that is not an object.")
     name = _str(item, "name", path)
     repo = _str(item, "repo", path)
     install_path = _str(item, "path", path)
@@ -141,7 +141,7 @@ def _record_from_dict(item: Any, path: Path) -> InstallRecord:
     installed_at = _str(item, "installedAt", path)
     assert name and repo and install_path and version and installed_at
     if not is_app_name(name) or not is_repo(repo):
-        raise StateError(f"A(z) {path} fájlban érvénytelen név vagy repó: {name!r}, {repo!r}")
+        raise StateError(f"Invalid name or repository in {path}: {name!r}, {repo!r}")
     return InstallRecord(name, repo, install_path, version, installed_at)
 
 
@@ -153,7 +153,7 @@ def load_installs(path: Path) -> list[InstallRecord]:
     data = _check_schema(raw, path)
     items = data.get("installs", [])
     if not isinstance(items, list):
-        raise StateError(f"A(z) {path} installs mezőjének listának kell lennie.")
+        raise StateError(f"The installs field of {path} must be a list.")
     return [_record_from_dict(item, path) for item in items]
 
 
@@ -255,13 +255,13 @@ def parse_install_info(raw: Any, path: Path) -> InstallInfo:
     installed_at = _str(data, "installedAt", path)
     assert name and repo and version and installed_at
     if not is_app_name(name) or not is_repo(repo):
-        raise StateError(f"A(z) {path} fájlban érvénytelen név vagy repó.")
+        raise StateError(f"Invalid name or repository in {path}.")
 
     database: DatabaseInfo | None = None
     raw_db = data.get("database")
     if raw_db is not None:
         if not isinstance(raw_db, dict):
-            raise StateError(f"A(z) {path} database mezője nem objektum.")
+            raise StateError(f"The database field of {path} is not an object.")
         fields = {
             key: _str(raw_db, key, path) for key in ("container", "network", "host", "name", "user")
         }
@@ -278,10 +278,10 @@ def parse_install_info(raw: Any, path: Path) -> InstallInfo:
 
     port = data.get("port")
     if port is not None and (isinstance(port, bool) or not isinstance(port, int)):
-        raise StateError(f"A(z) {path} port mezője érvénytelen.")
+        raise StateError(f"The port field of {path} is invalid.")
     auto_delete = data.get("autoDeleteOldBackups", False)
     if not isinstance(auto_delete, bool):
-        raise StateError(f"A(z) {path} autoDeleteOldBackups mezője érvénytelen.")
+        raise StateError(f"The autoDeleteOldBackups field of {path} is invalid.")
 
     return InstallInfo(
         name=name,

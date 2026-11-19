@@ -30,29 +30,29 @@ def pending_updates(ctx: Context) -> int:
         records = ctx.registry()
         return sum(1 for u in find_updates(ctx.github(), records) if u.available)
     except TelepitoError as exc:
-        ctx.log.warning(f"A frissítések ellenőrzése nem sikerült: {exc}")
+        ctx.log.warning(f"Checking for updates failed: {exc}")
         return 0
 
 
 def updates_screen(ctx: Context) -> None:
     records = ctx.registry()
     if not records:
-        ctx.ui.message("Még nincs telepített alkalmazás.", title="Elérhető frissítések")
+        ctx.ui.message("There are no installed applications yet.", title="Available updates")
         return
     infos = find_updates(ctx.github(), records)
     now = ctx.clock()
     available = [i for i in infos if i.available]
     if not available:
         ctx.ui.message(
-            "\n".join(format_update_line(i, now) for i in infos) + "\n\nMinden naprakész.",
-            title="Elérhető frissítések",
+            "\n".join(format_update_line(i, now) for i in infos) + "\n\nEverything is up to date.",
+            title="Available updates",
         )
         return
     by_name = {i.record.name: i for i in available}
     choice = ctx.ui.menu(
-        "Elérhető frissítések",
+        "Available updates",
         [Item(i.record.name, format_update_line(i, now)) for i in available],
-        text="Válassz egyet a frissítés indításához.",
+        text="Pick one to start the update.",
     )
     info = by_name[choice]
     assert info.latest is not None
@@ -63,25 +63,25 @@ def updates_screen(ctx: Context) -> None:
 
 
 def rollback_screen(ctx: Context) -> None:
-    record = ctx.pick_install("Visszaállítás előző verzióra")
+    record = ctx.pick_install("Roll back to a previous version")
     if record is None:
         return
     installer = ctx.installer()
     versions = installer.previous_versions(Path(record.path))
     if not versions:
         ctx.ui.message(
-            "Nincs visszaállítható korábbi verzió "
-            "(a kiadás mappája és a Docker-kép is kell hozzá).",
-            title="Visszaállítás",
+            "There is no previous version to roll back to "
+            "(both the release directory and the Docker image are needed).",
+            title="Roll back",
         )
         return
     chosen = ctx.ui.choose(
-        f"{record.name}: melyik verzióra állsz vissza?",
+        f"{record.name}: which version do you want to roll back to?",
         [Item(v, v) for v in versions],
         default=versions[0],
     )
     result = installer.rollback_to(Path(record.path), chosen)
-    ctx.ui.message(f"A(z) {result.version} verzió fut.", title="Visszaállítás")
+    ctx.ui.message(f"Version {result.version} is running.", title="Roll back")
 
 
 # ------------------------------------------------------------------- 6/7: status, logs
@@ -89,30 +89,30 @@ def rollback_screen(ctx: Context) -> None:
 
 def status_screen(ctx: Context) -> None:
     records = ctx.registry()
-    with ctx.ui.progress("Állapot", "Az alkalmazások lekérdezése...") as bar:
+    with ctx.ui.progress("Status", "Querying the applications...") as bar:
         bar.update(10)
         statuses = collect_status(records, ctx.docker, ctx.health)
         bar.update(100)
-    parts = [format_status(statuses), "", _token_line(ctx), "", "Az utolsó naplósorok:"]
-    parts += _recent_log_lines(ctx) or ["  (nincs napló)"]
-    ctx.ui.message("\n".join(parts), title="Állapot", scroll=True)
+    parts = [format_status(statuses), "", _token_line(ctx), "", "Latest log lines:"]
+    parts += _recent_log_lines(ctx) or ["  (no log)"]
+    ctx.ui.message("\n".join(parts), title="Status", scroll=True)
 
 
 def _token_line(ctx: Context) -> str:
     if ctx.tokens.load() is None:
-        return "GitHub-token: nincs megadva"
+        return "GitHub token: not set"
     repos = [r.repo for r in ctx.registry()] or [k.repo for k in ctx.known_repos()]
     if not repos:
-        return "GitHub-token: megadva (lejárata nem ellenőrizhető, nincs ismert repó)"
+        return "GitHub token: set (its expiry cannot be checked, there is no known repository)"
     try:
         status = ctx.github().check_access(repos[0])
     except TelepitoError as exc:
         return f"GitHub-token: {exc}"
     if status.expires_at is None:
-        return "GitHub-token: érvényes (nincs lejárati dátum)"
+        return "GitHub token: valid (no expiry date)"
     warning = token_expiry_warning(status, ctx.clock())
     when = status.expires_at.strftime("%Y-%m-%d")
-    return f"GitHub-token: lejár {when}" + (f"  ! {warning}" if warning else "")
+    return f"GitHub token: expires {when}" + (f"  ! {warning}" if warning else "")
 
 
 def _log_files(ctx: Context) -> list[Path]:
@@ -135,12 +135,12 @@ def _recent_log_lines(ctx: Context) -> list[str]:
 def logs_screen(ctx: Context) -> None:
     files = _log_files(ctx)
     if not files:
-        ctx.ui.message("Még nincs napló.", title="Naplók")
+        ctx.ui.message("There are no logs yet.", title="Logs")
         return
     by_name = {f.name: f for f in files}
     default: str | None = None
     while True:
-        name = ctx.ui.menu("Naplók", [Item(f.name, f.name) for f in files], default=default)
+        name = ctx.ui.menu("Logs", [Item(f.name, f.name) for f in files], default=default)
         default = name
         data = by_name[name].read_bytes()[-LOG_VIEW_BYTES:]
         ctx.ui.message(data.decode("utf-8", errors="replace"), title=name, scroll=True)
@@ -156,10 +156,10 @@ def settings_menu(ctx: Context) -> None:
     while True:
         try:
             choice = ctx.ui.menu(
-                "Beállítások",
+                "Settings",
                 [
-                    Item("token", "GitHub-token megadása és ellenőrzése"),
-                    Item("repos", "Ismert repók"),
+                    Item("token", "Set and verify the GitHub token"),
+                    Item("repos", "Known repositories"),
                 ],
             )
         except UiBack:
@@ -170,9 +170,9 @@ def settings_menu(ctx: Context) -> None:
 def _set_token(ctx: Context) -> None:
     ui = ctx.ui
     ui.message(
-        "Fine-grained personal access token kell, csak a szükséges repókra:\n"
+        "A fine-grained personal access token is needed, for only the required repositories:\n"
         "  Contents: Read, Metadata: Read\n"
-        "Lejárat: legfeljebb 90 nap.",
+        "Expiration: at most 90 days.",
         title="GitHub-token",
     )
     token = ui.secret("A token:", title="GitHub-token").strip()
@@ -184,16 +184,16 @@ def _set_token(ctx: Context) -> None:
     else:
         repo = ask_validated(
             ui,
-            "Egy repó, amelyhez a tokennek hozzá kell férnie (owner/repo):",
-            lambda v: None if is_repo(v.strip()) else "A formátum: owner/repo.",
+            "A repository the token must be able to access (owner/repo):",
+            lambda v: None if is_repo(v.strip()) else "The format is owner/repo.",
             title="GitHub-token",
         ).strip()
     status = client.check_access(repo)
     ctx.tokens.save(token)
     warning = token_expiry_warning(status, ctx.clock())
-    when = status.expires_at.strftime("%Y-%m-%d") if status.expires_at else "nincs megadva"
+    when = status.expires_at.strftime("%Y-%m-%d") if status.expires_at else "not given"
     ui.message(
-        f"A token érvényes, és hozzáfér a(z) {repo} repóhoz.\nLejárat: {when}"
+        f"The token is valid and can access {repo}.\nExpires: {when}"
         + (f"\n\n{warning}" if warning else ""),
         title="GitHub-token",
     )
@@ -203,28 +203,28 @@ def _manage_repos(ctx: Context) -> None:
     ui = ctx.ui
     while True:
         repos = ctx.known_repos()
-        items = [Item("__add__", "Új repó felvétele...")]
+        items = [Item("__add__", "Add a repository...")]
         items += [Item(k.repo, k.repo, k.default_path or "") for k in repos]
         try:
-            choice = ui.menu("Ismert repók", items)
+            choice = ui.menu("Known repositories", items)
         except UiBack:
             return
         if choice == "__add__":
             repo = ask_validated(
                 ui,
-                "A repó neve (owner/repo):",
-                lambda v: None if is_repo(v.strip()) else "A formátum: owner/repo.",
-                title="Új repó",
+                "The repository name (owner/repo):",
+                lambda v: None if is_repo(v.strip()) else "The format is owner/repo.",
+                title="New repository",
             ).strip()
             if any(k.repo == repo for k in repos):
-                ui.message("Ez a repó már szerepel a listán.", title="Ismert repók")
+                ui.message("This repository is already on the list.", title="Known repositories")
                 continue
             path = ui.text(
-                "Javasolt célmappa (üresen is hagyható):", title=repo, default=""
+                "Suggested target directory (may be left empty):", title=repo, default=""
             ).strip()
             save_repos(ctx.paths.repos_file, [*repos, KnownRepo(repo, path or None)])
             continue
-        if ui.confirm(f"Eltávolítod a(z) {choice} repót a listáról?", title="Ismert repók"):
+        if ui.confirm(f"Remove {choice} from the list?", title="Known repositories"):
             save_repos(ctx.paths.repos_file, [k for k in repos if k.repo != choice])
 
 
@@ -239,33 +239,35 @@ def selfupdate_screen(ctx: Context) -> None:
     ui = ctx.ui
     if ctx.pyz_path is None:
         ui.message(
-            "Ez a példány nem a telepito.pyz fájlból fut (fejlesztői indítás), "
-            "ezért nem frissíthető.",
-            title="A telepítő frissítése",
+            "This instance is not running from telepito.pyz (development start), "
+            "so it cannot be updated.",
+            title="Update the installer",
         )
         return
     github = ctx.github()
     release = find_update(github, __version__)
     if release is None:
-        ui.message(f"A telepítő naprakész (telepito {__version__}).", title="A telepítő frissítése")
+        ui.message(
+            f"The installer is up to date (telepito {__version__}).", title="Update the installer"
+        )
         return
     if not ui.confirm(
-        f"Új telepítő érhető el: {__version__} → {release.version}\n\n"
-        f"Forrás: {SELF_REPO}, kiadás {release.tag}\n"
-        "Letöltöm, ellenőrzöm az összeget, kipróbálom, és kicserélem a telepito.pyz fájlt "
-        "(a régi megmarad .previous néven).",
-        title="A telepítő frissítése",
+        f"A new installer is available: {__version__} → {release.version}\n\n"
+        f"Source: {SELF_REPO}, release {release.tag}\n"
+        "I will download it, verify the sum, try it out, and replace telepito.pyz "
+        "(the old file is kept as .previous).",
+        title="Update the installer",
         default=True,
     ):
         return
-    with ui.progress("A telepítő frissítése", f"{release.tag} letöltése...") as bar:
+    with ui.progress("Update the installer", f"Downloading {release.tag}...") as bar:
         bar.update(10)
         result = apply_update(github, release, ctx.pyz_path, ctx.log)
         bar.update(100)
     ui.message(
-        f"A telepítő frissítve: {result.old_version} → {result.new_version}.\n"
-        f"A régi fájl: {result.previous_file}\n\n"
-        "A telepítő most kilép; indítsd újra az új verzióval.",
-        title="A telepítő frissítése",
+        f"The installer was updated: {result.old_version} → {result.new_version}.\n"
+        f"The old file: {result.previous_file}\n\n"
+        "The installer will now exit; start it again to use the new version.",
+        title="Update the installer",
     )
     raise ExitRequested

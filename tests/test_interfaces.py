@@ -46,7 +46,7 @@ class InterfaceTests(unittest.TestCase):
         self.assertIsNone(release.version)
 
     def test_rate_limit_error(self) -> None:
-        err = GitHubRateLimited("lassú", retry_after=30)
+        err = GitHubRateLimited("slow", retry_after=30)
         self.assertIsInstance(err, GitHubError)
         self.assertEqual(err.retry_after, 30)
 

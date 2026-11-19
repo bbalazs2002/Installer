@@ -72,14 +72,14 @@ def apply_update(github: GitHub, release: Release, pyz_path: Path, log: Logger) 
     """Download, verify, test and install ``release`` over ``pyz_path``."""
     version = release.version
     if version is None:
-        raise SelfUpdateError(f"A(z) {release.tag} címke nem érvényes verzió.")
+        raise SelfUpdateError(f"The tag {release.tag} is not a valid version.")
     if pyz_path.suffix != ".pyz" or not pyz_path.is_file():
         raise SelfUpdateError(
-            "Csak a telepito.pyz fájlból futó telepítő frissíthető (ez most nem az)."
+            "Only an installer running from telepito.pyz can be updated (this one is not)."
         )
     pyz_asset, sums_asset = release.asset(PYZ_ASSET), release.asset(SUMS_ASSET)
     if pyz_asset is None or sums_asset is None:
-        raise SelfUpdateError(f"A kiadásból hiányzik a(z) {PYZ_ASSET} vagy a {SUMS_ASSET}.")
+        raise SelfUpdateError(f"The release is missing {PYZ_ASSET} or {SUMS_ASSET}.")
 
     directory = pyz_path.parent
     try:
@@ -87,18 +87,18 @@ def apply_update(github: GitHub, release: Release, pyz_path: Path, log: Logger) 
         scratch = Path(tempfile.mkdtemp(prefix=".telepito-update-", dir=directory))
     except OSError as exc:
         raise SelfUpdateError(
-            f"A(z) {directory} mappába nem lehet írni ({exc}), a frissítés nem lehetséges."
+            f"Cannot write to {directory} ({exc}); the update is not possible."
         ) from exc
 
     try:
         sums_path, new_path = scratch / SUMS_ASSET, scratch / PYZ_ASSET
-        log.info(f"Önfrissítés: {__version__} -> {version} ({release.tag})")
+        log.info(f"Self-update: {__version__} -> {version} ({release.tag})")
         github.download_asset(SELF_REPO, sums_asset, sums_path)
         github.download_asset(SELF_REPO, pyz_asset, new_path)
         sums = parse_sums(sums_path.read_text(encoding="utf-8"))
         expected = sums.get(PYZ_ASSET)
         if expected is None:
-            raise SelfUpdateError(f"A {SUMS_ASSET} nem tartalmazza a(z) {PYZ_ASSET} összegét.")
+            raise SelfUpdateError(f"{SUMS_ASSET} does not contain the sum of {PYZ_ASSET}.")
         try:
             verify_file(new_path, expected, PYZ_ASSET)
         except ReleaseError as exc:
@@ -109,7 +109,7 @@ def apply_update(github: GitHub, release: Release, pyz_path: Path, log: Logger) 
         atomic_write_bytes(previous, pyz_path.read_bytes(), mode)
         os.chmod(new_path, mode)
         os.replace(new_path, pyz_path)
-        log.info(f"A telepítő frissítve: {version}. A régi fájl: {previous.name}")
+        log.info(f"The installer was updated to {version}. The old file: {previous.name}")
         return SelfUpdateResult(__version__, str(version), previous)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -126,16 +126,16 @@ def _smoke_test(candidate: Path, expected: Version) -> None:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise SelfUpdateError(f"Az új telepítő nem indítható el ({exc}).") from exc
+        raise SelfUpdateError(f"The new installer cannot be started ({exc}).") from exc
     output = completed.stdout.decode("utf-8", errors="replace").strip()
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip().splitlines()[-1:]
         raise SelfUpdateError(
-            "Az új telepítő nem fut ezen a Pythonon" + (f": {detail[0]}" if detail else ".")
+            "The new installer does not run on this Python" + (f": {detail[0]}" if detail else ".")
         )
     if output != f"telepito {expected}":
         raise SelfUpdateError(
-            f"Az új telepítő más verziót jelez ({output!r}), mint a kiadás ({expected})."
+            f"The new installer reports a different version ({output!r}) than the release ({expected})."
         )
 
 

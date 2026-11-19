@@ -42,7 +42,7 @@ class InstallFlowTests(AppTestCase):
         summary = self.ui.messages()[-1]
         self.assertIn("127.0.0.1:2570", summary)
         self.assertIn("ProxyPass", summary)
-        self.assertIn("Hozz létre felhasználót", summary)
+        self.assertIn("Create a user", summary)
         self.assertEqual(list(self.paths.tmp_dir.iterdir()), [])  # temp files cleaned up
 
     def test_prereleases_are_hidden_until_toggled(self) -> None:
@@ -51,7 +51,7 @@ class InstallFlowTests(AppTestCase):
         self.ui.push(OTHER_REPO, REPO, TOGGLE_PRERELEASES, "v0.2.0-rc.1", "install")
         self.ui.push(str(self.target), D, "plan")  # stop at "plan only"
         install_flow(self.ctx)
-        menus = [c for c in self.ui.calls if c.kind == "menu" and c.title.endswith("kiadások")]
+        menus = [c for c in self.ui.calls if c.kind == "menu" and c.title.endswith("releases")]
         self.assertEqual(menus[0].items, (TOGGLE_PRERELEASES, "v0.1.0"))
         self.assertEqual(menus[1].items, (TOGGLE_PRERELEASES, "v0.2.0-rc.1", "v0.1.0"))
         self.assertIsNone(load_install_info(self.target))
@@ -60,7 +60,7 @@ class InstallFlowTests(AppTestCase):
         self.publish("0.1.0")
         self.ui.push(OTHER_REPO, REPO, "v0.1.0", "notes", "install", str(self.target), D, "plan")
         install_flow(self.ctx)
-        self.assertIn("Nincs változásjegyzék", self.messages())
+        self.assertIn("No release notes", self.messages())
 
     def test_plan_only_changes_nothing(self) -> None:
         self.publish("0.1.0")
@@ -68,7 +68,7 @@ class InstallFlowTests(AppTestCase):
         install_flow(self.ctx)
         self.assertEqual(self.docker.names().count("compose_up"), 0)
         self.assertIsNone(load_install_info(self.target))
-        self.assertIn("Lépések:", self.messages())
+        self.assertIn("Steps:", self.messages())
 
     def test_invalid_target_is_explained_and_asked_again(self) -> None:
         self.publish("0.1.0")
@@ -77,7 +77,7 @@ class InstallFlowTests(AppTestCase):
         self.ui.push(D, "plan")
         install_flow(self.ctx)
         text = self.messages()
-        self.assertIn("Abszolút útvonal", text)
+        self.assertIn("absolute path", text)
         self.assertIn("sudo mkdir -p", text)
 
     def test_a_blocked_plan_stops_before_asking_for_confirmation(self) -> None:
@@ -86,14 +86,14 @@ class InstallFlowTests(AppTestCase):
         self.ui.push(*self.answers_to_release(), str(self.target), D)
         install_flow(self.ctx)
         self.assertEqual(self.ui.remaining, 0)
-        self.assertIn("nem üres", self.messages())
+        self.assertIn("not empty", self.messages())
 
     def test_preflight_problems_stop_the_flow(self) -> None:
         self.publish("0.1.0")
         self.ctx.port_in_use = lambda port: True
         self.ui.push(*self.answers_to_release(), str(self.target), D)
         install_flow(self.ctx)
-        self.assertIn("foglalt", self.messages())
+        self.assertIn("in use", self.messages())
         self.assertEqual(self.docker.names().count("compose_up"), 0)
 
     def test_declining_the_final_confirmation_aborts(self) -> None:
@@ -117,7 +117,7 @@ class InstallFlowTests(AppTestCase):
     def test_missing_token_is_reported_through_the_menu_runner(self) -> None:
         self.tokens.delete()
         run_action(self.ctx, lambda c: install_flow(c))
-        self.assertIn("Nincs GitHub-token", self.messages())
+        self.assertIn("No GitHub token", self.messages())
 
 
 class UpdateFlowTests(AppTestCase):
@@ -138,7 +138,7 @@ class UpdateFlowTests(AppTestCase):
 
     def test_everything_current(self) -> None:
         updates_screen(self.ctx)
-        self.assertIn("naprakész", self.messages())
+        self.assertIn("up to date", self.messages())
 
     def test_choosing_an_update_runs_the_install_flow_prefilled(self) -> None:
         self.publish("0.2.0")
@@ -150,21 +150,21 @@ class UpdateFlowTests(AppTestCase):
         assert info is not None
         self.assertEqual((info.version, info.previous_versions), ("0.2.0", ("0.1.0",)))
         # repo and release were not asked again
-        self.assertNotIn("Melyik repó?", [c.title for c in self.ui.calls])
+        self.assertNotIn("Which repository?", [c.title for c in self.ui.calls])
 
     def test_no_installations(self) -> None:
         shutil.rmtree(self.state_dir)
         self.state_dir.mkdir()
         updates_screen(self.ctx)
-        self.assertIn("Még nincs telepített alkalmazás", self.messages())
+        self.assertIn("There are no installed applications yet", self.messages())
 
     def test_github_errors_are_shown_per_application(self) -> None:
         def broken(repo: str) -> None:
-            raise TelepitoError("GitHub nem elérhető")
+            raise TelepitoError("GitHub is unavailable")
 
         self.github.latest_stable = broken  # type: ignore[method-assign]
         updates_screen(self.ctx)
-        self.assertIn("hiba: GitHub nem elérhető", self.messages())
+        self.assertIn("error: GitHub is unavailable", self.messages())
 
 
 class MenuTests(AppTestCase):
@@ -188,7 +188,7 @@ class MenuTests(AppTestCase):
         self.ui.menu = spy  # type: ignore[method-assign]
         self.ui.push("quit")
         run_menu(self.ctx, updates_hint=lambda: 2)
-        self.assertTrue(any("(2 frissítés elérhető)" in label for label in seen))
+        self.assertTrue(any("(2 updates available)" in label for label in seen))
 
     def test_escape_in_the_main_menu_exits(self) -> None:
         self.ui.push(UiBack)
@@ -196,11 +196,11 @@ class MenuTests(AppTestCase):
 
     def test_expected_errors_become_messages_not_crashes(self) -> None:
         def boom(ctx: object) -> None:
-            raise TelepitoError("valami elromlott")
+            raise TelepitoError("something went wrong")
 
         run_action(self.ctx, boom)
-        self.assertIn("valami elromlott", self.messages())
-        self.assertTrue(any("valami elromlott" in r for r in self.log.records))
+        self.assertIn("something went wrong", self.messages())
+        self.assertTrue(any("something went wrong" in r for r in self.log.records))
 
     def test_escape_inside_an_action_is_just_going_back(self) -> None:
         def back(ctx: object) -> None:
@@ -221,7 +221,7 @@ class EnvFlowTests(AppTestCase):
         self.call(env_screen)
         self.assertEqual(self.env()["BASE_PATH"], "/new/")
         self.assertEqual(self.docker.up_log[-1][3], "0.1.0")
-        self.assertIn("újraindult", self.messages())
+        self.assertIn("restarted", self.messages())
 
     def test_declining_the_restart(self) -> None:
         before = self.docker.names().count("compose_up")
@@ -248,7 +248,7 @@ class EnvFlowTests(AppTestCase):
     def test_fixed_values_cannot_be_edited(self) -> None:
         self.ui.push("NODE_ENV", UiBack)
         self.call(env_screen)
-        self.assertIn("nem módosítható", self.messages())
+        self.assertIn("cannot be changed here", self.messages())
 
     def test_rotating_a_secret_from_the_env_list(self) -> None:
         old = self.env()["APIKEY_MASTER_SECRET"]
@@ -261,7 +261,7 @@ class EnvFlowTests(AppTestCase):
         self.ui.push("APIKEY_MASTER_SECRET", True, "generate", True)
         self.call(rotate_screen)
         self.assertNotEqual(self.env()["APIKEY_MASTER_SECRET"], old)
-        self.assertIn("újraindult", self.messages())
+        self.assertIn("restarted", self.messages())
         vault = self.ctx._vault
         assert vault is not None
         self.assertEqual(
@@ -318,7 +318,7 @@ class EnvFlowTests(AppTestCase):
         self.ctx.ui = self.ui
         self.ui.push("list", False, UiBack)  # decline creating a vault
         self.call(vault_menu)
-        self.assertIn("Jelszótár nélkül", self.messages())
+        self.assertIn("without a vault", self.messages())
 
 
 class DatabaseFlowTests(AppTestCase):
@@ -335,7 +335,7 @@ class DatabaseFlowTests(AppTestCase):
         self.call(database_menu)
         dumps = list(self.backups.glob("*.dump"))
         self.assertEqual(len(dumps), 1)
-        self.assertIn("A mentés elkészült", self.messages())
+        self.assertIn("The backup was created", self.messages())
 
     def test_restore_stops_restores_and_restarts(self) -> None:
         self.db.backup(  # a dump to restore from
@@ -350,12 +350,12 @@ class DatabaseFlowTests(AppTestCase):
         self.assertEqual(self.db.calls[-1], f"restore:{dump.name}")
         order = self.docker.names()
         self.assertLess(order.index("compose_stop"), order.index("compose_up"))
-        self.assertIn("újraindult", self.messages())
+        self.assertIn("restarted", self.messages())
 
     def test_restore_without_backups(self) -> None:
         self.ui.push("restore", UiBack)
         self.call(database_menu)
-        self.assertIn("Nincs mentés", self.messages())
+        self.assertIn("no backup", self.messages())
 
     def test_cleanup_deletes_old_backups_and_remembers_always(self) -> None:
         old = self.backups / "investment-0.0.1-20240101T000000Z.dump"
@@ -378,7 +378,7 @@ class DatabaseFlowTests(AppTestCase):
         shutil.rmtree(self.target)
         self.target.mkdir()
         self.call(database_menu)
-        self.assertIn("Nincs megfelelő", self.messages())
+        self.assertIn("no suitable", self.messages())
 
 
 class RollbackFlowTests(AppTestCase):
@@ -386,17 +386,17 @@ class RollbackFlowTests(AppTestCase):
         self.run_install("0.1.0")
         self.run_install("0.2.0")
         self.ui.calls.clear()
-        self.ui.push("0.1.0", "VISSZALÉPÉS")
+        self.ui.push("0.1.0", "DOWNGRADE")
         rollback_screen(self.ctx)
         info = load_install_info(self.target)
         assert info is not None
         self.assertEqual(info.version, "0.1.0")
-        self.assertIn("A(z) 0.1.0 verzió fut", self.messages())
+        self.assertIn("Version 0.1.0 is running", self.messages())
 
     def test_nothing_to_roll_back_to(self) -> None:
         self.run_install("0.1.0")
         rollback_screen(self.ctx)
-        self.assertIn("Nincs visszaállítható", self.messages())
+        self.assertIn("no previous version to roll back to", self.messages())
 
 
 class StatusAndLogTests(AppTestCase):
@@ -410,20 +410,20 @@ class StatusAndLogTests(AppTestCase):
         status_screen(self.ctx)
         text = self.messages()
         self.assertIn("investment  0.1.0", text)
-        self.assertIn("állapot: ok", text)
-        self.assertIn("GitHub-token: érvényes", text)
+        self.assertIn("status: ok", text)
+        self.assertIn("GitHub token: valid", text)
         self.assertIn("line 29", text)
         self.assertNotIn("line 9\n", text)  # only the last 20 lines
 
     def test_status_without_installations(self) -> None:
         status_screen(self.ctx)
-        self.assertIn("Még nincs telepített alkalmazás", self.messages())
+        self.assertIn("There are no installed applications yet", self.messages())
 
     def test_unhealthy_application_is_reported(self) -> None:
         self.run_install("0.1.0")
         self.reported_version = None
         status_screen(self.ctx)
-        self.assertIn("nem válaszol", self.messages())
+        self.assertIn("not responding", self.messages())
 
     def test_logs_viewer(self) -> None:
         self.paths.logs_dir.mkdir(parents=True)
@@ -438,7 +438,7 @@ class StatusAndLogTests(AppTestCase):
 
     def test_no_logs_yet(self) -> None:
         logs_screen(self.ctx)
-        self.assertIn("Még nincs napló", self.messages())
+        self.assertIn("There are no logs yet", self.messages())
 
 
 class SettingsFlowTests(AppTestCase):
@@ -448,20 +448,20 @@ class SettingsFlowTests(AppTestCase):
         self.ui.push("token", new, REPO, UiBack)
         self.call(settings_menu)
         self.assertEqual(self.tokens.load(), new)
-        self.assertIn("A token érvényes", self.messages())
+        self.assertIn("The token is valid", self.messages())
         self.assertEqual(self.log.redactor.redact(new), "***")
 
     def test_a_failing_token_is_not_saved(self) -> None:
         old = self.tokens.load()
 
         def deny(repo: str) -> None:
-            raise TelepitoError("A repóhoz nincs jog")
+            raise TelepitoError("No access to the repository")
 
         self.github.check_access = deny  # type: ignore[method-assign]
         self.ui.push("token", "github_pat_WRONGTOKEN12345", REPO, UiBack)
         self.call(settings_menu)
         self.assertEqual(self.tokens.load(), old)
-        self.assertIn("A repóhoz nincs jog", self.messages())
+        self.assertIn("No access to the repository", self.messages())
 
     def test_known_repos_can_be_added_and_removed(self) -> None:
         self.ui.push("repos", "__add__", "o/other", "/var/www/other", UiBack, UiBack)
@@ -477,7 +477,7 @@ class SettingsFlowTests(AppTestCase):
         save_repos(self.paths.repos_file, [KnownRepo("o/other")])
         self.ui.push("repos", "__add__", "o/other", UiBack, UiBack)
         self.call(settings_menu)
-        self.assertIn("már szerepel", self.messages())
+        self.assertIn("already on the list", self.messages())
         self.assertEqual(len(load_repos(self.paths.repos_file)), 1)
 
     def test_invalid_repo_name_is_asked_again(self) -> None:

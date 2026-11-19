@@ -64,10 +64,10 @@ class SubprocessDocker(Docker):
                     check=False,
                 )
             except FileNotFoundError as exc:
-                raise DockerError("A docker parancs nem található.") from exc
+                raise DockerError("The docker command was not found.") from exc
             except subprocess.TimeoutExpired as exc:
                 raise DockerError(
-                    f"A docker parancs időtúllépés miatt megszakadt ({args[0]})."
+                    f"The docker command was aborted because of a timeout ({args[0]})."
                 ) from exc
         finally:
             if stdin_handle is not None:
@@ -78,12 +78,12 @@ class SubprocessDocker(Docker):
 
     def _check(self, result: ExecResult, what: str) -> ExecResult:
         if result.returncode != 0:
-            raise DockerError(f"{what} sikertelen: {self._tail(result.stderr)}")
+            raise DockerError(f"{what} failed: {self._tail(result.stderr)}")
         return result
 
     def _tail(self, data: bytes, lines: int = 5) -> str:
         text = data.decode("utf-8", errors="replace").strip()
-        tail = "\n".join(text.splitlines()[-lines:]) or "(nincs hibaüzenet)"
+        tail = "\n".join(text.splitlines()[-lines:]) or "(no error message)"
         return self._redactor.redact(tail)
 
     def _compose_args(self, project: str, compose_file: Path, env_file: Path) -> list[str]:
@@ -101,16 +101,16 @@ class SubprocessDocker(Docker):
 
     def info(self) -> DockerInfo:
         server = self._check(
-            self._run(["version", "--format", "{{.Server.Version}}"]), "A Docker elérése"
+            self._run(["version", "--format", "{{.Server.Version}}"]), "Reaching Docker"
         )
         compose = self._check(
-            self._run(["compose", "version", "--short"]), "A docker compose ellenőrzése"
+            self._run(["compose", "version", "--short"]), "Checking docker compose"
         )
         compose_version = compose.stdout.decode().strip()
         match = _COMPOSE_MAJOR_RE.match(compose_version + ".")
         if match is None or int(match.group(1)) < 2:
             raise DockerError(
-                f"A docker compose v2 vagy újabb szükséges (talált: {compose_version or '?'})."
+                f"docker compose v2 or newer is required (found: {compose_version or '?'})."
             )
         return DockerInfo(server.stdout.decode().strip(), compose_version)
 
@@ -121,7 +121,9 @@ class SubprocessDocker(Docker):
 
     def list_running_containers(self) -> list[ContainerInfo]:
         names = (
-            self._check(self._run(["ps", "--format", "{{.Names}}"]), "A futó konténerek listázása")
+            self._check(
+                self._run(["ps", "--format", "{{.Names}}"]), "Listing the running containers"
+            )
             .stdout.decode()
             .split()
         )
@@ -133,11 +135,11 @@ class SubprocessDocker(Docker):
         return self._inspect([name])[0]
 
     def _inspect(self, names: Sequence[str]) -> list[ContainerInfo]:
-        result = self._check(self._run(["inspect", *names]), "A konténer vizsgálata")
+        result = self._check(self._run(["inspect", *names]), "Inspecting the container")
         try:
             data = json.loads(result.stdout)
         except ValueError as exc:
-            raise DockerError("A docker inspect kimenete nem értelmezhető.") from exc
+            raise DockerError("The output of docker inspect cannot be understood.") from exc
         return [_parse_inspect(item) for item in data]
 
     def image_exists(self, reference: str) -> bool:
@@ -145,12 +147,12 @@ class SubprocessDocker(Docker):
 
     def load_image(self, archive: Path) -> list[str]:
         result = self._check(
-            self._run(["load", "-i", str(archive)], timeout=LOAD_TIMEOUT), "A kép betöltése"
+            self._run(["load", "-i", str(archive)], timeout=LOAD_TIMEOUT), "Loading the image"
         )
         return _LOADED_RE.findall(result.stdout.decode("utf-8", errors="replace"))
 
     def remove_image(self, reference: str) -> None:
-        self._check(self._run(["image", "rm", reference]), "A kép törlése")
+        self._check(self._run(["image", "rm", reference]), "Removing the image")
 
     def compose_up(
         self, project: str, compose_file: Path, env_file: Path, *, force_recreate: bool = False
@@ -159,15 +161,15 @@ class SubprocessDocker(Docker):
         if force_recreate:
             args.append("--force-recreate")
         # The project directory (relative env_file, etc.) is the compose file's directory.
-        self._check(self._run(args, timeout=600, cwd=compose_file.parent), "Az indítás")
+        self._check(self._run(args, timeout=600, cwd=compose_file.parent), "Starting")
 
     def compose_stop(self, project: str, compose_file: Path, env_file: Path) -> None:
         args = [*self._compose_args(project, compose_file, env_file), "stop"]
-        self._check(self._run(args, timeout=300, cwd=compose_file.parent), "A leállítás")
+        self._check(self._run(args, timeout=300, cwd=compose_file.parent), "Stopping")
 
     def compose_ps(self, project: str, compose_file: Path, env_file: Path) -> str:
         args = [*self._compose_args(project, compose_file, env_file), "ps"]
-        result = self._check(self._run(args, cwd=compose_file.parent), "Az állapot lekérdezése")
+        result = self._check(self._run(args, cwd=compose_file.parent), "Querying the status")
         return self._redactor.redact(result.stdout.decode("utf-8", errors="replace"))
 
     def compose_logs(

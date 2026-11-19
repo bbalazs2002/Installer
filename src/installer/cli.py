@@ -49,22 +49,24 @@ from .versions import Version, VersionError
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="telepito",
-        description="Telepítő GitHub-release-ekhez (Docker). Paraméter nélkül a menü indul.",
+        description="Installer for GitHub releases (Docker). Without arguments the menu starts.",
     )
     parser.add_argument("--version", action="version", version=f"telepito {__version__}")
-    parser.add_argument("--state-dir", help="a telepítő mappája (alap: /var/www/telepito)")
-    parser.add_argument("--token-file", help="a GitHub-token fájlja")
-    sub = parser.add_subparsers(dest="command", metavar="parancs")
+    parser.add_argument(
+        "--state-dir", help="the installer's directory (default: the directory of telepito.pyz)"
+    )
+    parser.add_argument("--token-file", help="the GitHub token file")
+    sub = parser.add_subparsers(dest="command", metavar="command")
 
-    status = sub.add_parser("status", help="a telepített alkalmazások állapota (csak olvas)")
-    status.add_argument("--json", action="store_true", help="géppel olvasható kimenet")
+    status = sub.add_parser("status", help="the state of the installed applications (read-only)")
+    status.add_argument("--json", action="store_true", help="machine-readable output")
 
-    plan = sub.add_parser("plan", help="a terv kiírása; semmit nem módosít")
+    plan = sub.add_parser("plan", help="print the plan; changes nothing")
     plan.add_argument("repo", help="owner/repo")
-    plan.add_argument("version", help="a kiadás verziója, pl. 0.2.0")
-    plan.add_argument("target", help="a célmappa")
+    plan.add_argument("version", help="the release version, e.g. 0.2.0")
+    plan.add_argument("target", help="the target directory")
 
-    sub.add_parser("updates", help="az elérhető frissítések listája")
+    sub.add_parser("updates", help="list the available updates")
     return parser
 
 
@@ -94,13 +96,17 @@ def main(
 
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         print(
-            "Ne futtasd a telepítőt root-ként. Használd a saját felhasználódat; ha root kell "
-            "valamihez, a telepítő kiírja a pontos parancsot.",
+            "Do not run the installer as root. Use your own user; if root is needed for "
+            "something, the installer prints the exact command.",
             file=sys.stderr,
         )
         return EXIT_MISSING_PREREQUISITE
 
-    paths = paths or default_paths(args.state_dir, args.token_file)
+    try:
+        paths = paths or default_paths(args.state_dir, args.token_file)
+    except PrerequisiteError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_MISSING_PREREQUISITE
     redactor = Redactor()
     log = Logger(paths.logs_dir, redactor)
     try:
@@ -137,23 +143,25 @@ def main(
         log.error(str(exc))
         return _fail(str(exc))
     except KeyboardInterrupt:
-        print("\nMegszakítva.", file=sys.stderr)
+        print("\nInterrupted.", file=sys.stderr)
         return EXIT_USER_ABORT
     return EXIT_ERROR
 
 
 def _terminal_ui() -> Ui:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        raise PrerequisiteError("A menühöz interaktív terminál kell.")
+        raise PrerequisiteError("The menu needs an interactive terminal.")
     if not WhiptailUi.available():
-        raise PrerequisiteError("A whiptail nem található. Telepítés: sudo apt install whiptail")
+        raise PrerequisiteError(
+            "whiptail was not found. Install it with: sudo apt install whiptail"
+        )
     return WhiptailUi()
 
 
 def _require_state_dir(paths: Paths) -> None:
     if not paths.state_dir.is_dir():
         raise PrerequisiteError(
-            f"A telepítő mappája ({paths.state_dir}) nem létezik. Hozd létre root jogosultsággal:\n"
+            f"The installer's directory ({paths.state_dir}) does not exist. Create it with root privileges:\n"
             f"  sudo mkdir -p {paths.state_dir} && sudo chown $USER {paths.state_dir} "
             f"&& sudo chmod 2775 {paths.state_dir}"
         )
@@ -175,7 +183,7 @@ def _status(ctx: Context, *, as_json: bool) -> int:
 def _updates(ctx: Context) -> int:
     records = ctx.registry()
     if not records:
-        print("Még nincs telepített alkalmazás.")
+        print("There are no installed applications yet.")
         return EXIT_OK
     now = ctx.clock()
     for info in find_updates(ctx.github(), records):
@@ -191,7 +199,7 @@ def _plan(ctx: Context, repo: str, version_text: str, target_text: str) -> int:
     github = ctx.github()
     release = next((r for r in github.list_releases(repo) if r.version == version), None)
     if release is None:
-        return _fail(f"A(z) {version} kiadás nem található a(z) {repo} repóban.")
+        return _fail(f"Release {version} was not found in {repo}.")
 
     target = Path(os.path.realpath(target_text))
     ctx.paths.tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -223,7 +231,7 @@ def _plan(ctx: Context, repo: str, version_text: str, target_text: str) -> int:
 
     print(format_plan(plan))
     if problems:
-        print("\nElőellenőrzés:")
+        print("\nPre-checks:")
         for problem in problems:
             print(f"  ✗ {problem}")
     return EXIT_OK if plan.can_proceed and not problems else EXIT_ERROR

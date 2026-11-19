@@ -153,7 +153,7 @@ class ApplyUpdateTests(SelfUpdateTestCase):
         release = self.publish("9.0.0", pyz=fake_installer(self.dir, "9.0.0", exit_code=3))
         with self.assertRaises(SelfUpdateError) as ctx:
             apply_update(self.github, release, self.pyz, self.log)  # type: ignore[arg-type]
-        self.assertIn("nem fut", str(ctx.exception))
+        self.assertIn("does not run", str(ctx.exception))
         self.assertEqual(self.pyz.read_bytes(), b"OLD-INSTALLER")
 
     def test_a_build_that_reports_another_version_is_refused(self) -> None:
@@ -161,7 +161,7 @@ class ApplyUpdateTests(SelfUpdateTestCase):
         release = self.publish("9.0.0", pyz=wrong)
         with self.assertRaises(SelfUpdateError) as ctx:
             apply_update(self.github, release, self.pyz, self.log)  # type: ignore[arg-type]
-        self.assertIn("más verziót", str(ctx.exception))
+        self.assertIn("different version", str(ctx.exception))
         self.assertEqual(self.pyz.read_bytes(), b"OLD-INSTALLER")
 
     def test_garbage_that_is_not_a_zip_is_refused(self) -> None:
@@ -205,6 +205,17 @@ class BuildTests(unittest.TestCase):
             # The installer refuses to run as root (exit code 3); anyone else gets a clean 0.
             is_root = hasattr(os, "geteuid") and os.geteuid() == 0
             self.assertEqual(status.returncode, 3 if is_root else 0, status.stderr)
+
+    def test_the_state_directory_defaults_to_the_directory_of_the_pyz(self) -> None:
+        builder = load_builder()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "any" / "place"
+            out = builder.build(home / "telepito.pyz")
+            result = run_python(str(out), "status")
+            is_root = hasattr(os, "geteuid") and os.geteuid() == 0
+            self.assertEqual(result.returncode, 3 if is_root else 0, result.stderr)
+            if not is_root:
+                self.assertIn("no installed applications", result.stdout)
 
     def test_the_archive_contains_only_the_package(self) -> None:
         import zipfile
@@ -252,7 +263,7 @@ class SelfUpdateFlowTests(AppTestCase):
 
     def test_up_to_date(self) -> None:
         selfupdate_screen(self.ctx)
-        self.assertIn("naprakész", self.messages())
+        self.assertIn("up to date", self.messages())
         self.assertEqual(self.pyz.read_bytes(), b"OLD-INSTALLER")
 
     def test_update_confirmed_exits_the_menu(self) -> None:
@@ -260,7 +271,7 @@ class SelfUpdateFlowTests(AppTestCase):
         self.ui.push("selfupdate", True)
         self.assertEqual(run_menu(self.ctx), 0)  # returned on its own: no "quit" was needed
         self.assertNotEqual(self.pyz.read_bytes(), b"OLD-INSTALLER")
-        self.assertIn("indítsd újra", self.messages())
+        self.assertIn("start it again", self.messages())
 
     def test_update_declined(self) -> None:
         self.publish_self("9.0.0")
@@ -278,7 +289,7 @@ class SelfUpdateFlowTests(AppTestCase):
     def test_a_development_checkout_cannot_be_updated(self) -> None:
         self.ctx.pyz_path = None
         selfupdate_screen(self.ctx)
-        self.assertIn("nem a telepito.pyz", self.messages())
+        self.assertIn("not running from telepito.pyz", self.messages())
 
     def test_failures_are_shown_through_the_menu(self) -> None:
         data = fake_installer(self.root, "9.0.0")

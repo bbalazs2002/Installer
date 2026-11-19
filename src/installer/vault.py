@@ -56,7 +56,7 @@ BACKOFF_CAP = 30.0
 _HEADER_RE = re.compile(
     rf"^{MAGIC} (\d+) scrypt N={SCRYPT_N} r={SCRYPT_R} p={SCRYPT_P} ([0-9a-f]{{{SALT_LEN * 2}}})$"
 )
-_MSG_AUTH = "Hibás jelszó vagy sérült jelszótár."
+_MSG_AUTH = "Wrong password or damaged vault."
 
 
 class VaultError(TelepitoError):
@@ -73,7 +73,7 @@ class VaultAuthError(VaultError):
 def validate_master_password(password: str) -> str | None:
     """An error message if the password is too weak to create a vault with, else ``None``."""
     if len(password) < MIN_PASSWORD_LENGTH:
-        return f"A mester-jelszó legalább {MIN_PASSWORD_LENGTH} karakter kell legyen."
+        return f"The master password must be at least {MIN_PASSWORD_LENGTH} characters long."
     return None
 
 
@@ -94,7 +94,7 @@ def _derive_keys(password: str, salt: bytes) -> tuple[str, bytes]:
 def _openssl() -> str:
     exe = shutil.which("openssl")
     if exe is None:
-        raise PrerequisiteError("Az openssl parancs nem található, a jelszótár nem használható.")
+        raise PrerequisiteError("The openssl command was not found; the vault cannot be used.")
     return exe
 
 
@@ -141,9 +141,9 @@ def _openssl_run(data: bytes, key_hex: str, *, decrypt: bool) -> bytes:
                 pass_fds=inherited_fds,
             )
         except subprocess.TimeoutExpired as exc:
-            raise VaultError("Az openssl időtúllépéssel leállt.") from exc
+            raise VaultError("openssl timed out.") from exc
     if completed.returncode != 0:
-        raise VaultError("A jelszótár titkosítása vagy visszafejtése nem sikerült.")
+        raise VaultError("Encrypting or decrypting the vault failed.")
     output: bytes = completed.stdout
     return output
 
@@ -155,9 +155,9 @@ def _header(salt: bytes) -> bytes:
 
 def _check_name(installation: str, name: str | None = None) -> None:
     if not is_app_name(installation):
-        raise VaultError(f"Érvénytelen telepítésnév: {installation!r}")
+        raise VaultError(f"Invalid installation name: {installation!r}")
     if name is not None and not is_env_name(name):
-        raise VaultError(f"Érvénytelen titoknév: {name!r}")
+        raise VaultError(f"Invalid secret name: {name!r}")
 
 
 class Vault:
@@ -171,7 +171,7 @@ class Vault:
         self._entries: dict[str, dict[str, str]] = entries if entries is not None else {}
 
     def __repr__(self) -> str:
-        return f"Vault({self._path.name}, {len(self._entries)} telepítés)"
+        return f"Vault({self._path.name}, {len(self._entries)} installations)"
 
     # ------------------------------------------------------------ construction
 
@@ -186,7 +186,7 @@ class Vault:
         if problem is not None:
             raise VaultError(problem)
         if path.exists():
-            raise VaultError("A jelszótár már létezik.")
+            raise VaultError("The vault already exists.")
         vault = cls(path, password)
         vault.save()
         return vault
@@ -197,18 +197,18 @@ class Vault:
         try:
             blob = path.read_bytes()
         except OSError as exc:
-            raise VaultError(f"A jelszótár nem olvasható: {exc}") from exc
+            raise VaultError(f"The vault cannot be read: {exc}") from exc
         newline = blob.find(b"\n")
         if newline < 0:
-            raise VaultError("A jelszótár formátuma ismeretlen.")
+            raise VaultError("The vault format is unknown.")
         header_line = blob[:newline].decode("ascii", errors="replace")
         match = _HEADER_RE.match(header_line)
         if match is None:
-            raise VaultError("A jelszótár formátuma vagy paraméterei nem támogatottak.")
+            raise VaultError("The vault format or its parameters are not supported.")
         if int(match.group(1)) != FORMAT_VERSION:
             raise VaultError(
-                f"A jelszótár formátumverziója ({match.group(1)}) nem támogatott. "
-                "Frissítsd a telepítőt."
+                f"The vault format version ({match.group(1)}) is not supported. "
+                "Update the installer."
             )
         if len(blob) < newline + 1 + MAC_LEN:
             raise VaultAuthError()
@@ -223,7 +223,7 @@ class Vault:
             plaintext = _openssl_run(ciphertext, key_hex, decrypt=True)
             data = json.loads(plaintext)
         except (VaultError, ValueError) as exc:
-            raise VaultError("A jelszótár tartalma sérült.") from exc
+            raise VaultError("The vault contents are damaged.") from exc
         return cls(path, password, _validate_entries(data))
 
     # ------------------------------------------------------------------ access
@@ -305,7 +305,7 @@ class Vault:
 
 def _validate_entries(data: object) -> dict[str, dict[str, str]]:
     if not isinstance(data, dict) or not isinstance(data.get("entries"), dict):
-        raise VaultError("A jelszótár tartalma sérült.")
+        raise VaultError("The vault contents are damaged.")
     entries: dict[str, dict[str, str]] = {}
     for installation, group in data["entries"].items():
         if (
@@ -313,7 +313,7 @@ def _validate_entries(data: object) -> dict[str, dict[str, str]]:
             or not isinstance(group, dict)
             or not all(isinstance(k, str) and isinstance(v, str) for k, v in group.items())
         ):
-            raise VaultError("A jelszótár tartalma sérült.")
+            raise VaultError("The vault contents are damaged.")
         entries[installation] = dict(group)
     return entries
 

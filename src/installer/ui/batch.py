@@ -15,7 +15,9 @@ from .base import Item, ProgressHandle, Ui, null_progress
 
 
 def _no_input() -> TelepitoError:
-    return TelepitoError("Ehhez a művelethez interaktív felület kell (indítsd paraméter nélkül).")
+    return TelepitoError(
+        "This operation needs the interactive interface (start without arguments)."
+    )
 
 
 class BatchUi(Ui):

@@ -15,7 +15,7 @@ from .manifest import Manifest
 from .state import InstallInfo, InstallRecord, TargetState
 from .versions import Version
 
-DOWNGRADE_PHRASE = "VISSZALÉPÉS"
+DOWNGRADE_PHRASE = "DOWNGRADE"
 _MAX_LISTED_MIGRATIONS = 5
 
 
@@ -115,13 +115,13 @@ def build_plan(request: PlanRequest) -> Plan:
     blockers: list[str] = []
 
     if requested.is_prerelease:
-        warnings.append(f"A(z) {requested} előzetes (pre-release) kiadás.")
+        warnings.append(f"{requested} is a pre-release.")
 
     # 1. A target we cannot understand is never guessed around.
     if state.unreadable_reason is not None:
         blockers.append(
-            "A célmappában lévő telepítési nyilvántartás (.install.json) nem értelmezhető, "
-            f"ezért nem folytatom: {state.unreadable_reason}"
+            "The installation record (.install.json) in the target directory cannot be understood, "
+            f"so I am not continuing: {state.unreadable_reason}"
         )
         return _plan(PlanKind.BLOCKED, request, None, warnings, blockers, None)
 
@@ -131,36 +131,36 @@ def build_plan(request: PlanRequest) -> Plan:
         same_place = record.path == request.target
         if not same_place and record.name in (manifest.name, manifest.project_name):
             blockers.append(
-                f"A(z) {manifest.project_name} nevű telepítés már létezik máshol: {record.path}. "
-                "Egy névvel csak egy telepítés lehet."
+                f"An installation named {manifest.project_name} already exists elsewhere: {record.path}. "
+                "Only one installation per name is possible."
             )
 
     # 3. Nothing installed in the target yet.
     if info is None:
         if state.exists and not state.empty:
             blockers.append(
-                f"A célmappa ({request.target}) nem üres, és nem a telepítő hozta létre."
+                f"The target directory ({request.target}) is not empty and was not created by the installer."
             )
         return _plan(PlanKind.NEW, request, None, warnings, blockers, None)
 
     # 4. Something is installed: it must be this very application.
     if info.repo != request.repo or info.name != manifest.name:
         blockers.append(
-            f"A célmappában másik alkalmazás van telepítve ({info.name}, {info.repo}). "
-            "Válassz másik célmappát."
+            f"A different application is installed in the target directory ({info.name}, {info.repo}). "
+            "Choose another directory."
         )
         return _plan(PlanKind.OTHER_REPO, request, info.version, warnings, blockers, None)
 
     installed = Version.try_parse(info.version)
     if installed is None:
-        blockers.append(f"A telepített verzió ({info.version!r}) nem értelmezhető.")
+        blockers.append(f"The installed version ({info.version!r}) cannot be understood.")
         return _plan(PlanKind.BLOCKED, request, info.version, warnings, blockers, None)
 
     if requested > installed:
-        warnings.append(f"Ez frissítés, nem új telepítés: {installed} → {requested}")
+        warnings.append(f"This is an update, not a new installation: {installed} → {requested}")
         return _plan(PlanKind.UPDATE, request, str(installed), warnings, blockers, info)
     if requested == installed:
-        warnings.append(f"Ugyanez a verzió már telepítve van ({installed}).")
+        warnings.append(f"This version is already installed ({installed}).")
         return _plan(PlanKind.SAME, request, str(installed), warnings, blockers, info)
     return _downgrade_plan(request, installed, info, warnings, blockers)
 
@@ -174,8 +174,8 @@ def _downgrade_plan(
 ) -> Plan:
     manifest = request.manifest
     warnings.append(
-        f"VISSZALÉPÉS: {installed} → {request.version}. A régebbi kiadás nem feltétlenül "
-        "kompatibilis a jelenlegi adatokkal, és az adatbázis-migrációk csak előre mennek."
+        f"DOWNGRADE: {installed} → {request.version}. The older release is not necessarily "
+        "compatible with the current data, and database migrations only go forward."
     )
     extra: tuple[str, ...] = ()
     restore: BackupRef | None = None
@@ -183,8 +183,8 @@ def _downgrade_plan(
     if manifest.database is not None:
         if request.requested_migrations is None:
             blockers.append(
-                "A kért verzió migrációlistája nem áll rendelkezésre, ezért nem állapítható "
-                "meg, hogy a visszalépés biztonságos-e."
+                "The migration list of the requested version is not available, so it cannot be "
+                "determined whether the downgrade is safe."
             )
         else:
             wanted = set(request.requested_migrations)
@@ -193,22 +193,22 @@ def _downgrade_plan(
                 listed = ", ".join(extra[:_MAX_LISTED_MIGRATIONS])
                 more = len(extra) - _MAX_LISTED_MIGRATIONS
                 if more > 0:
-                    listed += f" (+{more} további)"
+                    listed += f" (+{more} more)"
                 blockers.append(
-                    f"Az adatbázis újabb a kért verziónál: {len(extra)} migráció nincs a "
-                    f"kért verzióban ({listed})."
+                    f"The database is newer than the requested version: {len(extra)} migrations are "
+                    f"not in the requested version ({listed})."
                 )
                 restore = _matching_backup(request.backups, request.version)
                 if restore is not None:
                     warnings.append(
-                        f"Felkínálható: az adatbázis visszatöltése a(z) {restore.version} "
-                        "verzióhoz tartozó mentésből. A mentés óta keletkezett adatok "
-                        "elvesznek."
+                        f"Possible: restore the database from the backup of version {restore.version}. "
+                        "Data created since that backup "
+                        "will be lost."
                     )
                 else:
                     warnings.append(
-                        f"Nincs a(z) {request.version} verzióhoz tartozó adatbázis-mentés, "
-                        "ezért a visszalépés nem lehetséges."
+                        f"There is no database backup for version {request.version}, "
+                        "so the downgrade is not possible."
                     )
     return _plan(
         PlanKind.DOWNGRADE, request, str(installed), warnings, blockers, info, extra, restore
@@ -251,37 +251,36 @@ def _plan(
 def _steps(kind: PlanKind, manifest: Manifest) -> tuple[Step, ...]:
     is_new = kind is PlanKind.NEW
     steps = [
-        Step(StepId.LOCK, "Zárolás (másik telepítő nem futhat egyszerre)"),
-        Step(StepId.DOWNLOAD, "A kiadás letöltése és a SHA-256 összegek ellenőrzése"),
+        Step(StepId.LOCK, "Lock (no other installer may run at the same time)"),
+        Step(StepId.DOWNLOAD, "Download the release and verify the SHA-256 sums"),
     ]
     if not is_new:
         # Also for SAME: a re-published release could differ from what is installed.
-        steps.append(Step(StepId.COMPOSE_REVIEW, "A docker-compose fájl változásainak áttekintése"))
+        steps.append(Step(StepId.COMPOSE_REVIEW, "Review the changes to the docker-compose file"))
     steps.append(
         Step(
             StepId.ENV,
-            "A .env.production beállítása (varázsló)"
+            "Set up .env.production (wizard)"
             if is_new
-            else "Az új környezeti változók beállítása, az eltávolítottak felsorolása",
+            else "Set up the new environment variables and list the removed ones",
         )
     )
     if manifest.database is not None:
         if is_new:
-            steps.append(Step(StepId.DB_CREATE, "Adatbázis és felhasználó létrehozása"))
+            steps.append(Step(StepId.DB_CREATE, "Create the database and user"))
         else:
-            steps.append(Step(StepId.DB_BACKUP, "Adatbázis-mentés a módosítás előtt"))
+            steps.append(Step(StepId.DB_BACKUP, "Database backup before the change"))
     steps += [
-        Step(StepId.LOAD_IMAGE, "A Docker-kép betöltése"),
-        Step(StepId.ACTIVATE, "A kiadás előkészítése (mappa, .env.production link, compose.env)"),
-        Step(StepId.START, "Indítás (docker compose up -d)"),
+        Step(StepId.LOAD_IMAGE, "Load the Docker image"),
+        Step(StepId.ACTIVATE, "Prepare the release (directory, .env.production link, compose.env)"),
+        Step(StepId.START, "Start (docker compose up -d)"),
         Step(
             StepId.HEALTH,
-            f"Állapot-ellenőrzés ({manifest.health_path}, legfeljebb "
-            f"{manifest.health_timeout_seconds} mp)",
+            f"Health check ({manifest.health_path}, at most {manifest.health_timeout_seconds} s)",
         ),
         Step(
             StepId.FINALIZE,
-            "Átváltás az új kiadásra, a nyilvántartás frissítése, a régi kiadások takarítása",
+            "Switch to the new release, update the records, clean up old releases",
         ),
     ]
     return tuple(steps)
@@ -292,40 +291,39 @@ def _confirmation(kind: PlanKind, request: PlanRequest) -> Confirmation:
     if kind is PlanKind.DOWNGRADE:
         return Confirmation(
             ConfirmKind.TYPE,
-            f"Visszalépés a(z) {name} {request.version} verziójára. A folytatáshoz írd be: "
-            f"{DOWNGRADE_PHRASE}",
+            f"Downgrade {name} to version {request.version}. To continue, type: {DOWNGRADE_PHRASE}",
             DOWNGRADE_PHRASE,
         )
     if kind is PlanKind.SAME:
         return Confirmation(
             ConfirmKind.CONFIRM,
-            f"Ugyanez a verzió ({request.version}) már telepítve van. Újratelepíted?",
+            f"Version {request.version} is already installed. Reinstall it?",
         )
     if kind is PlanKind.UPDATE:
-        return Confirmation(ConfirmKind.CONFIRM, f"Frissíted a(z) {name} alkalmazást?")
-    return Confirmation(ConfirmKind.CONFIRM, f"Telepíted a(z) {name} {request.version} verzióját?")
+        return Confirmation(ConfirmKind.CONFIRM, f"Update {name}?")
+    return Confirmation(ConfirmKind.CONFIRM, f"Install version {request.version} of {name}?")
 
 
 _KIND_TITLES = {
-    PlanKind.NEW: "Új telepítés",
-    PlanKind.UPDATE: "Frissítés",
-    PlanKind.SAME: "Újratelepítés (ugyanaz a verzió)",
-    PlanKind.DOWNGRADE: "VISSZALÉPÉS",
-    PlanKind.OTHER_REPO: "Másik alkalmazás van a célmappában",
-    PlanKind.BLOCKED: "A művelet nem végezhető el",
+    PlanKind.NEW: "New installation",
+    PlanKind.UPDATE: "Update",
+    PlanKind.SAME: "Reinstall (same version)",
+    PlanKind.DOWNGRADE: "DOWNGRADE",
+    PlanKind.OTHER_REPO: "A different application is in the target directory",
+    PlanKind.BLOCKED: "The operation cannot be carried out",
 }
 
 
 def format_plan(plan: Plan) -> str:
     """The plan as plain text (for the confirmation screen and ``telepito plan``)."""
-    lines = [f"Művelet: {_KIND_TITLES[plan.kind]}"]
+    lines = [f"Operation: {_KIND_TITLES[plan.kind]}"]
     if plan.installed_version:
-        lines.append(f"Telepített verzió: {plan.installed_version}")
-    lines.append(f"Kért verzió: {plan.requested_version}")
+        lines.append(f"Installed version: {plan.installed_version}")
+    lines.append(f"Requested version: {plan.requested_version}")
     if plan.blockers:
-        lines += ["", "Akadályok:"] + [f"  ✗ {b}" for b in plan.blockers]
+        lines += ["", "Blockers:"] + [f"  ✗ {b}" for b in plan.blockers]
     if plan.warnings:
-        lines += ["", "Figyelmeztetések:"] + [f"  ! {w}" for w in plan.warnings]
+        lines += ["", "Warnings:"] + [f"  ! {w}" for w in plan.warnings]
     if plan.steps and not plan.blockers:
-        lines += ["", "Lépések:"] + [f"  {i}. {s.description}" for i, s in enumerate(plan.steps, 1)]
+        lines += ["", "Steps:"] + [f"  {i}. {s.description}" for i, s in enumerate(plan.steps, 1)]
     return "\n".join(lines)

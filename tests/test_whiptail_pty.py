@@ -79,7 +79,7 @@ def drive(
             os.kill(pid, 9)
             _, status = os.waitpid(pid, 0)
             raise AssertionError(
-                "A whiptail-teszt időtúllépéssel leállt. Képernyő:\n"
+                "The whiptail test timed out. Screen:\n"
                 + captured.decode("utf-8", errors="replace")[-1500:]
             )
         os.close(fd)
@@ -105,7 +105,7 @@ class RealWhiptailTests(unittest.TestCase):
         code = (
             PRELUDE
             + """
-finish(ui.menu("Cím", [Item("a", "Alma"), Item("b", "Barack", "leírás")], text="Válassz"))
+finish(ui.menu("Title", [Item("a", "Apple"), Item("b", "Peach", "description")], text="Choose"))
 """
         )
         status, result = drive(code, [(DOWN, 1.0), (ENTER, 0.3)])
@@ -115,7 +115,7 @@ finish(ui.menu("Cím", [Item("a", "Alma"), Item("b", "Barack", "leírás")], tex
         code = (
             PRELUDE
             + """
-finish(ui.menu("Cím", [Item("a", "Alma"), Item("b", "Barack")], default="b"))
+finish(ui.menu("Title", [Item("a", "Apple"), Item("b", "Peach")], default="b"))
 """
         )
         self.assertEqual(drive(code, [(ENTER, 1.0)]), (0, "b"))
@@ -125,7 +125,7 @@ finish(ui.menu("Cím", [Item("a", "Alma"), Item("b", "Barack")], default="b"))
             PRELUDE
             + """
 try:
-    finish(ui.menu("Cím", [Item("a", "Alma")]))
+    finish(ui.menu("Title", [Item("a", "Apple")]))
 except UiBack:
     finish("BACK")
 """
@@ -136,11 +136,11 @@ except UiBack:
         code = (
             PRELUDE
             + """
-finish(ui.text("Mappa?", title="Cél"))
+finish(ui.text("Folder?", title="Target"))
 """
         )
-        status, result = drive(code, [("/var/www/árvíz".encode(), 1.0), (ENTER, 0.3)])
-        self.assertEqual((status, result), (0, "/var/www/árvíz"))
+        status, result = drive(code, [("/var/www/café-ő".encode(), 1.0), (ENTER, 0.3)])
+        self.assertEqual((status, result), (0, "/var/www/café-ő"))
 
     def test_inputbox_keeps_its_default_on_enter(self) -> None:
         code = (
@@ -155,7 +155,7 @@ finish(ui.text("Port?", default="2570"))
         code = (
             PRELUDE
             + """
-finish(ui.secret("Jelszó:"))
+finish(ui.secret("Password:"))
 """
         )
         self.assertEqual(drive(code, [(b"pw 123", 1.0), (ENTER, 0.3)]), (0, "pw 123"))
@@ -164,7 +164,7 @@ finish(ui.secret("Jelszó:"))
         code = (
             PRELUDE
             + """
-finish([ui.confirm("Biztos?", default=True), ui.confirm("Biztos?", default=False)])
+finish([ui.confirm("Sure?", default=True), ui.confirm("Sure?", default=False)])
 """
         )
         # default True: Enter = Igen; default False: Enter = Nem
@@ -174,9 +174,9 @@ finish([ui.confirm("Biztos?", default=True), ui.confirm("Biztos?", default=False
         code = (
             PRELUDE
             + """
-items = [Item("a", "Alma"), Item("b", "Barack"), Item("c", "Cseresznye")]
-one = ui.choose("Egy", items, default="a")
-many = ui.choose_many("Több", items)
+items = [Item("a", "Apple"), Item("b", "Peach"), Item("c", "Cherry")]
+one = ui.choose("One", items, default="a")
+many = ui.choose_many("Several", items)
 finish([one, many])
 """
         )
@@ -190,8 +190,8 @@ finish([one, many])
         code = (
             PRELUDE
             + """
-ui.message("Kész", title="T")
-ui.message("\\n".join(f"sor {i}" for i in range(200)), title="Napló", scroll=True)
+ui.message("Done", title="T")
+ui.message("\\n".join(f"line {i}" for i in range(200)), title="Log", scroll=True)
 finish("ok")
 """
         )
@@ -203,7 +203,7 @@ finish("ok")
             PRELUDE
             + """
 import time
-with ui.progress("Letöltés", "indul") as bar:
+with ui.progress("Download", "starting") as bar:
     for percent in (10, 50, 100):
         bar.update(percent, f"{percent}%")
         time.sleep(0.2)
@@ -216,7 +216,7 @@ finish("done")
         code = (
             PRELUDE
             + """
-finish(ui.menu("Cím", [Item(str(i), f"elem {i}") for i in range(100)], text="szöveg " * 40))
+finish(ui.menu("Title", [Item(str(i), f"item {i}") for i in range(100)], text="text " * 40))
 """
         )
         self.assertEqual(drive(code, [(ENTER, 1.0)]), (0, "0"))

@@ -108,46 +108,44 @@ class _Reader:
     @staticmethod
     def obj(value: Any, path: str) -> dict[str, Any]:
         if not isinstance(value, dict):
-            raise ManifestError(f"A(z) {path} mezőnek objektumnak kell lennie.")
+            raise ManifestError(f"The field {path} must be an object.")
         return value
 
     def known(self, data: dict[str, Any], allowed: set[str], path: str) -> None:
         for key in data:
             if key not in allowed:
                 where = f"{path}.{key}" if path else key
-                self.warnings.append(
-                    f"Ismeretlen kulcs a deploy.json-ban: {where} (figyelmen kívül hagyva)"
-                )
+                self.warnings.append(f"Unknown key in deploy.json: {where} (ignored)")
 
     @staticmethod
     def required(data: dict[str, Any], key: str, path: str) -> Any:
         if key not in data:
             where = f"{path}.{key}" if path else key
-            raise ManifestError(f"Hiányzó kötelező mező a deploy.json-ban: {where}")
+            raise ManifestError(f"Required field missing in deploy.json: {where}")
         return data[key]
 
     @staticmethod
     def string(value: Any, path: str, *, allow_empty: bool = True) -> str:
         if not isinstance(value, str):
-            raise ManifestError(f"A(z) {path} mezőnek szövegnek kell lennie.")
+            raise ManifestError(f"The field {path} must be a string.")
         if not allow_empty and not value:
-            raise ManifestError(f"A(z) {path} mező nem lehet üres.")
+            raise ManifestError(f"The field {path} must not be empty.")
         return value
 
     @staticmethod
     def integer(value: Any, path: str, *, minimum: int, maximum: int | None = None) -> int:
         # bool is a subclass of int; reject it explicitly.
         if isinstance(value, bool) or not isinstance(value, int):
-            raise ManifestError(f"A(z) {path} mezőnek egész számnak kell lennie.")
+            raise ManifestError(f"The field {path} must be an integer.")
         if value < minimum or (maximum is not None and value > maximum):
             limit = f"{minimum}..{maximum}" if maximum is not None else f">= {minimum}"
-            raise ManifestError(f"A(z) {path} mező értéke érvénytelen ({limit} kell legyen).")
+            raise ManifestError(f"The value of {path} is invalid (must be {limit}).")
         return value
 
     @staticmethod
     def boolean(value: Any, path: str) -> bool:
         if not isinstance(value, bool):
-            raise ManifestError(f"A(z) {path} mezőnek igaz/hamis értéknek kell lennie.")
+            raise ManifestError(f"The field {path} must be true or false.")
         return value
 
 
@@ -157,7 +155,7 @@ def _parse_env_item(reader: _Reader, raw: Any, index: int) -> EnvVar:
     reader.known(data, _ENV_KEYS, path)
     name = reader.string(reader.required(data, "name", path), f"{path}.name", allow_empty=False)
     if not is_env_name(name):
-        raise ManifestError(f"Érvénytelen környezeti változó neve: {name!r}")
+        raise ManifestError(f"Invalid environment variable name: {name!r}")
     path = f"env[{name}]"
 
     description = reader.string(data.get("description", ""), f"{path}.description")
@@ -168,12 +166,12 @@ def _parse_env_item(reader: _Reader, raw: Any, index: int) -> EnvVar:
     if fixed is not None:
         fixed = reader.string(fixed, f"{path}.fixed")
     if default is not None and fixed is not None:
-        raise ManifestError(f"A(z) {path} elemnél a default és a fixed együtt nem adható meg.")
+        raise ManifestError(f"{path} cannot have both default and fixed.")
 
     required = reader.boolean(data.get("required", False), f"{path}.required")
     secret = reader.boolean(data.get("secret", False), f"{path}.secret")
     if secret and fixed is not None:
-        raise ManifestError(f"A(z) {path} titkos elem nem lehet fixed értékű.")
+        raise ManifestError(f"{path} is secret and cannot have a fixed value.")
 
     generate_bytes: int | None = None
     if "generate" in data:
@@ -186,9 +184,7 @@ def _parse_env_item(reader: _Reader, raw: Any, index: int) -> EnvVar:
             maximum=1024,
         )
         if not secret:
-            raise ManifestError(
-                f"A(z) {path} elemnél a generate csak titkos (secret) elemhez adható."
-            )
+            raise ManifestError(f"{path}: generate can only be used with a secret element.")
 
     validate = data.get("validate")
     if validate is not None:
@@ -197,13 +193,11 @@ def _parse_env_item(reader: _Reader, raw: Any, index: int) -> EnvVar:
             compiled = re.compile(validate)
         except re.error as exc:
             raise ManifestError(
-                f"A(z) {path}.validate nem érvényes reguláris kifejezés: {exc}"
+                f"{path}.validate is not a valid regular expression: {exc}"
             ) from exc
         for label, candidate in (("default", default), ("fixed", fixed)):
             if candidate is not None and compiled.fullmatch(candidate) is None:
-                raise ManifestError(
-                    f"A(z) {path}.{label} értéke nem felel meg a saját validate mintájának."
-                )
+                raise ManifestError(f"{path}.{label} does not match its own validate pattern.")
 
     min_length: int | None = None
     if "minLength" in data:
@@ -214,16 +208,13 @@ def _parse_env_item(reader: _Reader, raw: Any, index: int) -> EnvVar:
         rotation_warning = reader.string(rotation_warning, f"{path}.rotationWarning")
         if not secret:
             reader.warnings.append(
-                f"A(z) {path}.rotationWarning csak titkos elemnél használatos "
-                "(figyelmen kívül hagyva)"
+                f"{path}.rotationWarning only applies to secret elements (ignored)"
             )
             rotation_warning = None
 
     group = reader.string(data.get("group", "basic"), f"{path}.group")
     if group not in GROUPS:
-        raise ManifestError(
-            f"A(z) {path}.group értéke 'basic' vagy 'advanced' lehet, nem {group!r}."
-        )
+        raise ManifestError(f"{path}.group must be 'basic' or 'advanced', not {group!r}.")
 
     return EnvVar(
         name=name,
@@ -247,19 +238,19 @@ def _parse_database(reader: _Reader, raw: Any, app_name: str) -> DatabaseSpec | 
         return None
     engine = reader.string(data.get("engine", "postgres"), "database.engine")
     if engine != "postgres":
-        raise ManifestError(f"Nem támogatott adatbázis-motor: {engine!r} (egyelőre csak postgres).")
+        raise ManifestError(f"Unsupported database engine: {engine!r} (only postgres for now).")
     url_env = reader.string(
         reader.required(data, "urlEnv", "database"), "database.urlEnv", allow_empty=False
     )
     if not is_env_name(url_env):
-        raise ManifestError(f"Érvénytelen database.urlEnv: {url_env!r}")
+        raise ManifestError(f"Invalid database.urlEnv: {url_env!r}")
     template = reader.string(
         reader.required(data, "urlTemplate", "database"), "database.urlTemplate", allow_empty=False
     )
     unknown = set(_PLACEHOLDER_RE.findall(template)) - URL_TEMPLATE_FIELDS
     if unknown:
         raise ManifestError(
-            "A database.urlTemplate ismeretlen helyőrzőt tartalmaz: "
+            "database.urlTemplate contains an unknown placeholder: "
             + ", ".join(sorted("{" + u + "}" for u in unknown))
         )
     fallback = app_name.replace("-", "_")
@@ -267,7 +258,7 @@ def _parse_database(reader: _Reader, raw: Any, app_name: str) -> DatabaseSpec | 
     default_user = reader.string(data.get("defaultUser", fallback), "database.defaultUser")
     for label, value in (("defaultDatabase", default_db), ("defaultUser", default_user)):
         if not is_db_identifier(value):
-            raise ManifestError(f"A database.{label} értéke érvénytelen azonosító: {value!r}")
+            raise ManifestError(f"database.{label} is not a valid identifier: {value!r}")
     return DatabaseSpec(
         engine=engine,
         description=reader.string(data.get("description", ""), "database.description"),
@@ -287,15 +278,17 @@ def parse_manifest(data: Any) -> Manifest:
     version = reader.integer(reader.required(root, "schemaVersion", ""), "schemaVersion", minimum=1)
     if version > SUPPORTED_SCHEMA_VERSION:
         raise ManifestError(
-            f"A deploy.json schemaVersion értéke ({version}) újabb, mint amit ez a telepítő "
-            f"ismer ({SUPPORTED_SCHEMA_VERSION}). Frissítsd a telepítőt."
+            f"The schemaVersion of deploy.json ({version}) is newer than this installer "
+            f"supports ({SUPPORTED_SCHEMA_VERSION}). Update the installer."
         )
 
     reader.known(root, _ROOT_KEYS, "")
 
     name = reader.string(reader.required(root, "name", ""), "name", allow_empty=False)
     if not is_app_name(name):
-        raise ManifestError(f"Érvénytelen alkalmazásnév: {name!r} (kisbetű, szám, kötőjel).")
+        raise ManifestError(
+            f"Invalid application name: {name!r} (lowercase letters, digits, hyphens)."
+        )
     display_name = reader.string(root.get("displayName", name), "displayName") or name
 
     image = reader.obj(reader.required(root, "image", ""), "image")
@@ -304,16 +297,16 @@ def parse_manifest(data: Any) -> Manifest:
         reader.required(image, "name", "image"), "image.name", allow_empty=False
     )
     if not is_app_name(image_name):
-        raise ManifestError(f"Érvénytelen image.name: {image_name!r}")
+        raise ManifestError(f"Invalid image.name: {image_name!r}")
 
     compose = reader.obj(reader.required(root, "compose", ""), "compose")
     reader.known(compose, {"file", "projectName"}, "compose")
     compose_file = reader.string(compose.get("file", "docker-compose.deploy.yml"), "compose.file")
     if not is_asset_name(compose_file):
-        raise ManifestError(f"Érvénytelen compose.file (csak fájlnév lehet): {compose_file!r}")
+        raise ManifestError(f"Invalid compose.file (must be a plain file name): {compose_file!r}")
     project_name = reader.string(compose.get("projectName", name), "compose.projectName")
     if not is_app_name(project_name):
-        raise ManifestError(f"Érvénytelen compose.projectName: {project_name!r}")
+        raise ManifestError(f"Invalid compose.projectName: {project_name!r}")
 
     port = reader.obj(reader.required(root, "port", ""), "port")
     reader.known(port, {"default", "env"}, "port")
@@ -322,7 +315,7 @@ def parse_manifest(data: Any) -> Manifest:
     )
     port_env = reader.string(port.get("env", "PORT"), "port.env", allow_empty=False)
     if not is_env_name(port_env):
-        raise ManifestError(f"Érvénytelen port.env: {port_env!r}")
+        raise ManifestError(f"Invalid port.env: {port_env!r}")
 
     health = reader.obj(reader.required(root, "health", ""), "health")
     reader.known(health, {"path", "timeoutSeconds", "versionField"}, "health")
@@ -330,7 +323,7 @@ def parse_manifest(data: Any) -> Manifest:
         reader.required(health, "path", "health"), "health.path", allow_empty=False
     )
     if not health_path.startswith("/"):
-        raise ManifestError("A health.path-nak perjellel (/) kell kezdődnie.")
+        raise ManifestError("health.path must start with a slash (/).")
     health_timeout = reader.integer(
         health.get("timeoutSeconds", 120), "health.timeoutSeconds", minimum=1, maximum=3600
     )
@@ -349,23 +342,23 @@ def parse_manifest(data: Any) -> Manifest:
                 migrations["listAsset"], "migrations.listAsset", allow_empty=False
             )
             if not is_asset_name(migrations_asset):
-                raise ManifestError(f"Érvénytelen migrations.listAsset: {migrations_asset!r}")
+                raise ManifestError(f"Invalid migrations.listAsset: {migrations_asset!r}")
 
     raw_env = root.get("env", [])
     if not isinstance(raw_env, list):
-        raise ManifestError("Az env mezőnek listának kell lennie.")
+        raise ManifestError("The env field must be a list.")
     env = tuple(_parse_env_item(reader, item, i) for i, item in enumerate(raw_env))
     seen: set[str] = set()
     for item in env:
         if item.name in seen:
-            raise ManifestError(f"Az env listában a(z) {item.name} kétszer szerepel.")
+            raise ManifestError(f"{item.name} appears twice in the env list.")
         seen.add(item.name)
     if database is not None and database.url_env in seen:
         raise ManifestError(
-            f"A(z) {database.url_env} a database.urlEnv, ezért nem szerepelhet az env listában."
+            f"{database.url_env} is the database.urlEnv, so it must not be listed in env."
         )
     if port_env in seen:
-        raise ManifestError(f"A(z) {port_env} a port.env, ezért nem szerepelhet az env listában.")
+        raise ManifestError(f"{port_env} is the port.env, so it must not be listed in env.")
 
     proxy_note = proxy_snippet = ""
     if "proxy" in root:
@@ -376,7 +369,7 @@ def parse_manifest(data: Any) -> Manifest:
 
     raw_post = root.get("postInstall", [])
     if not isinstance(raw_post, list):
-        raise ManifestError("A postInstall mezőnek listának kell lennie.")
+        raise ManifestError("The postInstall field must be a list.")
     post_install = tuple(
         reader.string(item, f"postInstall[{i}]") for i, item in enumerate(raw_post)
     )
@@ -411,5 +404,5 @@ def load_manifest(raw: bytes | str) -> Manifest:
     try:
         data = json.loads(raw)
     except (ValueError, UnicodeDecodeError) as exc:
-        raise ManifestError(f"A deploy.json nem érvényes JSON: {exc}") from exc
+        raise ManifestError(f"deploy.json is not valid JSON: {exc}") from exc
     return parse_manifest(data)

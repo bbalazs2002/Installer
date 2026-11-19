@@ -47,20 +47,20 @@ def install_flow(ctx: Context, preset: Preset | None = None) -> None:
 
     work_dir = Path(tempfile.mkdtemp(prefix="meta-", dir=ctx.paths.tmp_dir))
     try:
-        with ui.progress("Kiadás ellenőrzése", f"{repo} {release.tag}") as bar:
-            bar.update(5, "A leíró és az ellenőrző összegek letöltése...")
+        with ui.progress("Checking the release", f"{repo} {release.tag}") as bar:
+            bar.update(5, "Downloading the descriptor and the checksums...")
             meta = installer.fetch_metadata(repo, release, work_dir)
             bar.update(100)
         manifest = meta.manifest
         if manifest.warnings:
-            ui.message("\n".join(manifest.warnings), title="A deploy.json figyelmeztetései")
+            ui.message("\n".join(manifest.warnings), title="Warnings from deploy.json")
 
         target = _choose_target(ctx, manifest, repo, preset)
         existing = load_install_info(target)
         port = int(
             ask_validated(
                 ui,
-                "Melyik porton figyeljen az alkalmazás (csak 127.0.0.1)?",
+                "Which port should the application listen on (127.0.0.1 only)?",
                 _port_error,
                 title="Port",
                 default=str(
@@ -87,14 +87,14 @@ def install_flow(ctx: Context, preset: Preset | None = None) -> None:
         problems = installer.preflight(meta, release, target, kind=plan.kind, port=port)
         text = format_plan(plan)
         if problems:
-            text += "\n\nElőellenőrzés:\n" + "\n".join(f"  ✗ {p}" for p in problems)
-        ui.message(text, title="Terv", scroll=True)
+            text += "\n\nPre-checks:\n" + "\n".join(f"  ✗ {p}" for p in problems)
+        ui.message(text, title="Plan", scroll=True)
         if not plan.can_proceed or problems:
             return
 
         choice = ui.menu(
-            "Mehet?",
-            [Item("run", "Folytatás"), Item("plan", "Csak terv (itt megállok)")],
+            "Go ahead?",
+            [Item("run", "Continue"), Item("plan", "Plan only (stop here)")],
         )
         if choice == "plan":
             return
@@ -103,8 +103,8 @@ def install_flow(ctx: Context, preset: Preset | None = None) -> None:
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
-    ctx.log.info(f"Kész: {manifest.name} {result.version}")
-    ui.message(_summary(manifest, result), title="Kész", scroll=True)
+    ctx.log.info(f"Done: {manifest.name} {result.version}")
+    ui.message(_summary(manifest, result), title="Done", scroll=True)
     _offer_known_repo(ctx, repo, str(target))
 
 
@@ -114,29 +114,29 @@ def install_flow(ctx: Context, preset: Preset | None = None) -> None:
 def _port_error(value: str) -> str | None:
     if value.isdigit() and 1 <= int(value) <= 65535:
         return None
-    return "A port 1 és 65535 közötti szám legyen."
+    return "The port must be a number between 1 and 65535."
 
 
 def _version(release: Release) -> Version:
     version = release.version
     if version is None:
-        raise TelepitoError(f"A(z) {release.tag} címke nem érvényes verzió (SemVer).")
+        raise TelepitoError(f"The tag {release.tag} is not a valid version (SemVer).")
     return version
 
 
 def _choose_repo(ctx: Context) -> str:
     known = ctx.known_repos()
     installed = {r.repo for r in ctx.registry()}
-    items = [Item(k.repo, k.repo + ("  [telepítve]" if k.repo in installed else "")) for k in known]
-    items.append(Item(OTHER_REPO, "Másik repó..."))
-    choice = ctx.ui.menu("Melyik repó?", items)
+    items = [Item(k.repo, k.repo + ("  [installed]" if k.repo in installed else "")) for k in known]
+    items.append(Item(OTHER_REPO, "Another repository..."))
+    choice = ctx.ui.menu("Which repository?", items)
     if choice != OTHER_REPO:
         return choice
     return ask_validated(
         ctx.ui,
-        "A repó neve (owner/repo):",
-        lambda v: None if is_repo(v.strip()) else "A formátum: owner/repo.",
-        title="Másik repó",
+        "The repository name (owner/repo):",
+        lambda v: None if is_repo(v.strip()) else "The format is owner/repo.",
+        title="Another repository",
     ).strip()
 
 
@@ -144,14 +144,14 @@ def _find_release(github: GitHub, repo: str, tag: str) -> Release:
     for release in github.list_releases(repo):
         if release.tag == tag:
             return release
-    raise TelepitoError(f"A(z) {tag} kiadás nem található a(z) {repo} repóban.")
+    raise TelepitoError(f"Release {tag} was not found in {repo}.")
 
 
 def _choose_release(ctx: Context, github: GitHub, repo: str) -> Release:
     ui = ctx.ui
     releases = [r for r in github.list_releases(repo) if r.version is not None]
     if not releases:
-        raise TelepitoError(f"A(z) {repo} repóban nincs telepíthető (SemVer) kiadás.")
+        raise TelepitoError(f"There is no installable (SemVer) release in {repo}.")
     installed = {r.version for r in ctx.registry() if r.repo == repo}
     show_prereleases = False
     default: str | None = None
@@ -160,17 +160,17 @@ def _choose_release(ctx: Context, github: GitHub, repo: str) -> Release:
         items = [
             Item(
                 TOGGLE_PRERELEASES,
-                f"Előzetes kiadások: {'mutatva' if show_prereleases else 'rejtve'} (váltás)",
+                f"Pre-releases: {'shown' if show_prereleases else 'hidden'} (toggle)",
             )
         ]
         for release in visible:
             label = f"{release.tag:<14} {format_age(release.published_at, ctx.clock())}"
             if release.prerelease:
-                label += "  [előzetes]"
+                label += "  [pre-release]"
             if str(release.version) in installed:
-                label += "  [telepítve]"
+                label += "  [installed]"
             items.append(Item(release.tag, label))
-        choice = ui.menu(f"{repo} — kiadások", items, default=default)
+        choice = ui.menu(f"{repo} — releases", items, default=default)
         default = choice
         if choice == TOGGLE_PRERELEASES:
             show_prereleases = not show_prereleases
@@ -187,14 +187,14 @@ def _release_action(ctx: Context, release: Release) -> bool:
         try:
             action = ctx.ui.menu(
                 release.tag,
-                [Item("install", "Telepítés ezzel a verzióval"), Item("notes", "Változásjegyzék")],
+                [Item("install", "Install this version"), Item("notes", "Release notes")],
             )
         except UiBack:
             return False
         if action == "install":
             return True
         ctx.ui.message(
-            release.body.strip() or "(Nincs változásjegyzék.)", title=release.tag, scroll=True
+            release.body.strip() or "(No release notes.)", title=release.tag, scroll=True
         )
 
 
@@ -209,7 +209,7 @@ def _choose_target(ctx: Context, manifest: Manifest, repo: str, preset: Preset |
         or f"/var/www/{manifest.name}"
     )
     while True:
-        text = ctx.ui.text("Hova telepítsem?", title="Célmappa", default=default)
+        text = ctx.ui.text("Where should I install it?", title="Target directory", default=default)
         check = validate_target(
             text,
             state_dir=ctx.paths.state_dir,
@@ -218,19 +218,25 @@ def _choose_target(ctx: Context, manifest: Manifest, repo: str, preset: Preset |
         )
         if check.path is not None:
             return check.path
-        ctx.ui.message(check.error or "Érvénytelen mappa.", title="Célmappa")
+        ctx.ui.message(check.error or "Invalid directory.", title="Target directory")
         default = text
 
 
 def _summary(manifest: Manifest, result: InstallResult) -> str:
-    lines = [f"{manifest.display_name} {result.version} telepítve, és fut: 127.0.0.1:{result.port}"]
+    lines = [
+        f"{manifest.display_name} {result.version} is installed and running at 127.0.0.1:{result.port}"
+    ]
     if result.proxy_snippet:
-        lines += ["", manifest.proxy_note or "Apache-beállítás (a telepítő nem módosítja):", ""]
+        lines += [
+            "",
+            manifest.proxy_note or "Apache configuration (the installer does not change it):",
+            "",
+        ]
         lines += [f"    {line}" for line in result.proxy_snippet.splitlines()]
     if result.post_install:
-        lines += ["", "Teendők:"] + [f"  - {step}" for step in result.post_install]
+        lines += ["", "To do:"] + [f"  - {step}" for step in result.post_install]
     if result.backup_path is not None:
-        lines += ["", f"Adatbázis-mentés: {result.backup_path}"]
+        lines += ["", f"Database backup: {result.backup_path}"]
     return "\n".join(lines)
 
 
@@ -239,7 +245,7 @@ def _offer_known_repo(ctx: Context, repo: str, target: str) -> None:
     if any(k.repo == repo for k in known):
         return
     if ctx.ui.confirm(
-        f"Felveszed a(z) {repo} repót az ismert repók közé?", title="Ismert repók", default=True
+        f"Add {repo} to the known repositories?", title="Known repositories", default=True
     ):
         save_repos(ctx.paths.repos_file, [*known, KnownRepo(repo, target)])
 

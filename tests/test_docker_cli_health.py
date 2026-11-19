@@ -60,7 +60,7 @@ class SubprocessDockerTests(unittest.TestCase):
         self.runner.results.append(FileNotFoundError())
         with self.assertRaises(DockerError) as ctx:
             self.docker.info()
-        self.assertIn("nem található", str(ctx.exception))
+        self.assertIn("was not found", str(ctx.exception))
 
     def test_timeout_becomes_docker_error(self) -> None:
         self.runner.results.append(subprocess.TimeoutExpired("docker", 1))

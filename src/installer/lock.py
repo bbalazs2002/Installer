@@ -26,7 +26,7 @@ class FileLock:
 
     def acquire(self) -> None:
         if self._fd is not None:
-            raise RuntimeError("A zárolás már megvan.")
+            raise RuntimeError("The lock is already held.")
         fd = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o640)
         try:
             if sys.platform == "win32":
@@ -36,7 +36,7 @@ class FileLock:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
             os.close(fd)
-            raise LockBusy("Másik telepítő fut. Várd meg, amíg befejezi.") from exc
+            raise LockBusy("Another installer is running. Wait until it finishes.") from exc
         self._fd = fd
 
     def release(self) -> None:

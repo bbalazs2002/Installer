@@ -81,7 +81,7 @@ class VaultTests(unittest.TestCase):
         self.make()
         with self.assertRaises(VaultAuthError) as ctx:
             Vault.open(self.path, "wrong password 1")
-        self.assertEqual(str(ctx.exception), "Hibás jelszó vagy sérült jelszótár.")
+        self.assertEqual(str(ctx.exception), "Wrong password or damaged vault.")
 
     def test_any_modified_byte_is_detected(self) -> None:
         self.make()
@@ -126,7 +126,7 @@ class VaultTests(unittest.TestCase):
         with self.assertRaises(VaultError) as ctx:
             Vault.open(self.path, PASSWORD)
         self.assertNotIsInstance(ctx.exception, VaultAuthError)
-        self.assertIn("verzió", str(ctx.exception))
+        self.assertIn("version", str(ctx.exception))
 
     def test_scrypt_parameters_are_pinned(self) -> None:
         self.assertEqual((FORMAT_VERSION, SCRYPT_N, SCRYPT_R, SCRYPT_P), (1, 2**15, 8, 1))
@@ -242,7 +242,7 @@ class VaultTests(unittest.TestCase):
         with self.assertRaises(VaultError) as ctx:
             Vault.open(self.path, PASSWORD)
         self.assertNotIsInstance(ctx.exception, VaultAuthError)
-        self.assertIn("sérült", str(ctx.exception))
+        self.assertIn("damaged", str(ctx.exception))
 
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl not installed")

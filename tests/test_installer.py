@@ -64,7 +64,7 @@ class FakeDb(DatabaseOps):
         if not self.write_backups:
             if self.proceed_without_backup:
                 return None
-            raise UserAbort("Mentés nélkül a művelet megáll.")
+            raise UserAbort("Without a backup the operation stops.")
         path = backups_dir / f"investment-{version}-20261119T000000Z.dump"
         path.write_bytes(b"dump")
         self.backup_result = path
@@ -237,7 +237,7 @@ class PreflightTests(InstallerTestCase):
             meta, release, self.target, kind=PlanKind.NEW, port=2570
         )
         self.assertEqual(len(problems), 2)  # target and docker root
-        self.assertTrue(all("szabad hely" in p for p in problems))
+        self.assertTrue(all("free space" in p for p in problems))
 
     def test_port_in_use_only_matters_for_new_installs(self) -> None:
         meta, release = self.meta()
@@ -246,7 +246,7 @@ class PreflightTests(InstallerTestCase):
         update = self.installer.preflight(
             meta, release, self.target, kind=PlanKind.UPDATE, port=2570
         )
-        self.assertTrue(any("foglalt" in p for p in new))
+        self.assertTrue(any("in use" in p for p in new))
         self.assertEqual(update, [])
 
     def test_docker_unavailable(self) -> None:
@@ -264,7 +264,7 @@ class NewInstallTests(InstallerTestCase):
         t = self.target
         self.assertEqual(result.version, "0.1.0")
         self.assertIn("127.0.0.1:2570", result.proxy_snippet)
-        self.assertEqual(result.post_install, ("Hozz létre felhasználót",))
+        self.assertEqual(result.post_install, ("Create a user",))
         # layout
         self.assertEqual((t / "current").resolve(), (t / "releases" / "0.1.0").resolve())
         self.assertTrue((t / "releases" / "0.1.0" / "docker-compose.deploy.yml").is_file())
@@ -465,7 +465,7 @@ class FailureTests(InstallerTestCase):
         self.assertFalse((self.target / "current").exists())
         self.assertIsNone(load_install_info(self.target))
         self.assertEqual(load_installs(self.state_dir / "installs.json"), [])
-        self.assertTrue(any("naplója" in m for m in self.ui.messages()))
+        self.assertTrue(any("Container log" in m for m in self.ui.messages()))
 
     def test_new_install_failure_stop(self) -> None:
         _, release = self.publish("0.1.0")
@@ -487,7 +487,7 @@ class FailureTests(InstallerTestCase):
         self.ui.push("keep")
         with self.assertRaises(InstallFailed) as ctx:
             self.installer.install(self.make_job(release))
-        self.assertIn("időtúllépés", str(ctx.exception))
+        self.assertIn("timed out", str(ctx.exception))
 
     def test_compose_up_failure_is_a_failure_not_a_crash(self) -> None:
         _, release = self.publish("0.1.0")
@@ -512,7 +512,7 @@ class FailureTests(InstallerTestCase):
         self.ui.push("rollback")
         with self.assertRaises(InstallFailed) as ctx:
             self.installer.install(self.make_job(release))
-        self.assertIn("visszaállítva és fut", str(ctx.exception))
+        self.assertIn("was restored and is running", str(ctx.exception))
         info = load_install_info(self.target)
         assert info is not None
         self.assertEqual(info.version, "0.1.0")  # state unchanged
@@ -547,7 +547,7 @@ class FailureTests(InstallerTestCase):
         self.ui.push("rollback_restore")
         with self.assertRaises(InstallFailed) as ctx:
             self.installer.install(self.make_job(release))
-        self.assertIn("visszaállítva", str(ctx.exception))
+        self.assertIn("was restored", str(ctx.exception))
         self.assertTrue(any(c.startswith("restore:") for c in self.db.calls))
 
     def test_ctrl_c_leaves_state_untouched(self) -> None:
@@ -589,7 +589,7 @@ class RollbackToTests(InstallerTestCase):
         self.assertEqual(self.installer.previous_versions(self.target), [])
 
     def test_rollback_to_previous_version(self) -> None:
-        self.ui.push("VISSZALÉPÉS")
+        self.ui.push("DOWNGRADE")
         result = self.installer.rollback_to(self.target, "0.1.0")
         self.assertEqual(result.version, "0.1.0")
         info = load_install_info(self.target)
@@ -601,7 +601,7 @@ class RollbackToTests(InstallerTestCase):
         self.assertEqual(self.db.calls[-1], "backup:0.2.0")
 
     def test_wrong_confirmation_word_aborts_without_changes(self) -> None:
-        self.ui.push("igen")
+        self.ui.push("yes")
         with self.assertRaises(UserAbort):
             self.installer.rollback_to(self.target, "0.1.0")
         info = load_install_info(self.target)
@@ -612,7 +612,7 @@ class RollbackToTests(InstallerTestCase):
         self.docker.images.discard("investment:0.1.0")
         with self.assertRaises(TelepitoError) as ctx:
             self.installer.rollback_to(self.target, "0.1.0")
-        self.assertIn("Töltsd le újra", str(ctx.exception))
+        self.assertIn("Download the release again", str(ctx.exception))
 
     def test_unknown_version(self) -> None:
         with self.assertRaises(TelepitoError):
@@ -628,7 +628,7 @@ class RollbackToTests(InstallerTestCase):
         save_install_info(self.target, replace(info, migrations=("m1", "m_extra")))
         with self.assertRaises(TelepitoError) as ctx:
             self.installer.rollback_to(self.target, "0.1.0")
-        self.assertIn("nem végezhető el", str(ctx.exception))
+        self.assertIn("cannot be carried out", str(ctx.exception))
 
 
 class RestartTests(InstallerTestCase):
@@ -646,7 +646,7 @@ class RestartTests(InstallerTestCase):
         self.docker.on_up = None
         problem = self.installer.restart(self.target)
         assert problem is not None
-        self.assertIn("időtúllépés", problem)
+        self.assertIn("timed out", problem)
 
     def test_restart_reports_docker_failure(self) -> None:
         self.install("0.1.0")

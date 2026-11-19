@@ -17,7 +17,7 @@ EXAMPLE: dict[str, Any] = {
     "database": {
         "required": True,
         "engine": "postgres",
-        "description": "Postgres kell.",
+        "description": "Postgres is needed.",
         "urlEnv": "DATABASE_URL",
         "urlTemplate": "postgresql://{user}:{password}@{host}:{port}/{database}",
         "defaultDatabase": "investment",
@@ -34,8 +34,8 @@ EXAMPLE: dict[str, Any] = {
         },
         {
             "name": "APIKEY_MASTER_SECRET",
-            "description": "titok",
-            "rotationWarning": "Csere után a kulcsok nem láthatók.",
+            "description": "secret",
+            "rotationWarning": "After the change the existing keys can no longer be viewed.",
             "secret": True,
             "required": True,
             "generate": {"bytes": 48},
@@ -45,7 +45,7 @@ EXAMPLE: dict[str, Any] = {
         {"name": "INTRADAY_COLLECT_ENABLED", "default": "false", "group": "advanced"},
     ],
     "proxy": {"note": "Apache", "snippet": 'ProxyPass "/x/" "http://127.0.0.1:{port}/"'},
-    "postInstall": ["Hozz létre felhasználót"],
+    "postInstall": ["Create a user"],
     "keep": 3,
 }
 
@@ -71,7 +71,9 @@ class ValidManifestTests(unittest.TestCase):
         assert secret is not None
         self.assertEqual(secret.generate_bytes, 48)
         self.assertEqual(secret.min_length, 32)
-        self.assertEqual(secret.rotation_warning, "Csere után a kulcsok nem láthatók.")
+        self.assertEqual(
+            secret.rotation_warning, "After the change the existing keys can no longer be viewed."
+        )
         advanced = m.env_by_name("INTRADAY_COLLECT_ENABLED")
         assert advanced is not None
         self.assertEqual(advanced.group, "advanced")
@@ -162,7 +164,7 @@ class InvalidManifestTests(unittest.TestCase):
     def test_newer_schema_version(self) -> None:
         data = example()
         data["schemaVersion"] = 2
-        self.assert_invalid(data, "Frissítsd a telepítőt")
+        self.assert_invalid(data, "Update the installer")
 
     def test_not_an_object(self) -> None:
         self.assert_invalid([], "deploy.json")
@@ -240,7 +242,7 @@ class InvalidManifestTests(unittest.TestCase):
         self.assert_invalid(with_item({"name": "X", "group": "other"}), "group")
         self.assert_invalid(with_item({"name": "X", "required": "yes"}), "required")
         self.assert_invalid(with_item({"name": "X", "minLength": -1}), "minLength")
-        self.assert_invalid(with_item({"name": "NODE_ENV"}), "kétszer")
+        self.assert_invalid(with_item({"name": "NODE_ENV"}), "twice")
 
     def test_keep_rules(self) -> None:
         for bad in [0, -1, "3", True]:

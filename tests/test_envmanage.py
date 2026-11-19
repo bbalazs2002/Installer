@@ -104,8 +104,8 @@ class RotateTests(EnvManageTestCase):
         ui = ScriptedUi([True, "generate"])
         self.rotate(ui, MemoryVault(), "APIKEY_MASTER_SECRET")
         confirm = next(c for c in ui.calls if c.kind == "confirm")
-        self.assertIn("Csere után a kulcsok elvesznek.", confirm.text)
-        self.assertIn("újraindítás", confirm.text)
+        self.assertIn("After the change the existing keys are lost.", confirm.text)
+        self.assertIn("restarted", confirm.text)
 
     def test_the_stored_old_value_is_not_offered_as_the_new_one(self) -> None:
         vault = MemoryVault()

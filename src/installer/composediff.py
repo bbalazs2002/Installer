@@ -86,8 +86,8 @@ def review_compose(old: str | None, new: str) -> ComposeReview:
     lines = difflib.unified_diff(
         old.splitlines(),
         new.splitlines(),
-        fromfile="telepített",
-        tofile="új",
+        fromfile="installed",
+        tofile="new",
         lineterm="",
     )
     out: list[str] = []

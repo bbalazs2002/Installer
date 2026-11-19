@@ -1,14 +1,25 @@
-# Változásnapló
+# Changelog
+
+## 0.1.1
+
+- The whole program is in English: the interface, messages, documentation and README.
+- The Python package was renamed from `telepito` to `installer`. The program name (`telepito`),
+  the `telepito.pyz` asset and the `telepito <version>` output of `--version` are unchanged, so
+  installers deployed earlier can still update themselves.
+- **The installer directory is no longer fixed.** By default the installer keeps its files
+  (`installs.json`, `repos.json`, `vault/`, `logs/`, `tmp/`) in the directory that contains
+  `telepito.pyz`; `--state-dir` and `TELEPITO_STATE_DIR` still override it.
+- Downgrade confirmation word: `DOWNGRADE`.
 
 ## 0.1.0
 
-Az első kiadás.
+The first release.
 
-- Telepítés, frissítés, visszalépés és visszaállítás GitHub-release-ekből Docker-konténerként,
-  SHA-256 ellenőrzéssel, a compose-fájl változásainak áttekintésével és állapot-ellenőrzéssel.
-- `whiptail` menü magyar szövegekkel; csak olvasó parancsok: `status`, `plan`, `updates`.
-- Interaktív `.env.production` varázsló, titkosított jelszótár (scrypt, AES-256, HMAC),
-  titkok forgatása.
-- Postgres: adatbázis és felhasználó létrehozása (SCRAM-SHA-256), mentés minden frissítés előtt,
-  visszatöltés, az egy évnél régebbi mentések törlése.
-- Önfrissítés a `telepito.pyz` cseréjével.
+- Install, update, downgrade and recover from GitHub releases as Docker containers, with SHA-256
+  verification, a review of compose file changes and a health check.
+- A `whiptail` menu; read-only commands: `status`, `plan`, `updates`.
+- An interactive `.env.production` wizard, an encrypted vault (scrypt, AES-256, HMAC) and secret
+  rotation.
+- Postgres: create the database and user (SCRAM-SHA-256), a backup before every update, restore,
+  and deletion of backups older than a year.
+- Self-update by replacing `telepito.pyz`.

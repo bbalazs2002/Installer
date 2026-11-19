@@ -21,8 +21,8 @@ from typing import Any
 from ..errors import PrerequisiteError
 from .base import Item, ProgressHandle, Ui, UiBack
 
-BACKTITLE = "Telepítő"
-CANCEL_LABEL = "Vissza"
+BACKTITLE = "Installer"
+CANCEL_LABEL = "Back"
 _ESC = 255
 _OVERHEAD = 8  # border, title, buttons and padding rows of a dialog
 _MIN_WIDTH = 40
@@ -98,7 +98,7 @@ class WhiptailUi(Ui):
             completed = self._runner(command, stderr=subprocess.PIPE, check=False)
         except FileNotFoundError as exc:
             raise PrerequisiteError(
-                "A whiptail nem található. Telepítés: sudo apt install whiptail"
+                "whiptail was not found. Install it with: sudo apt install whiptail"
             ) from exc
         output = (completed.stderr or b"").decode("utf-8", errors="replace")
         return completed.returncode, output
@@ -189,7 +189,7 @@ class WhiptailUi(Ui):
     def confirm(self, prompt: str, *, title: str = "", default: bool = False) -> bool:
         prompt = self._text(prompt)
         height, width = self._geometry(prompt)
-        args = ["--title", title, "--yes-button", "Igen", "--no-button", "Nem"]
+        args = ["--title", title, "--yes-button", "Yes", "--no-button", "No"]
         if not default:
             args.append("--defaultno")
         args += ["--yesno", prompt, str(height), str(width)]
@@ -242,7 +242,7 @@ class WhiptailUi(Ui):
             process: Any = self._popen(command, stdin=subprocess.PIPE)
         except FileNotFoundError as exc:
             raise PrerequisiteError(
-                "A whiptail nem található. Telepítés: sudo apt install whiptail"
+                "whiptail was not found. Install it with: sudo apt install whiptail"
             ) from exc
         try:
             yield _Gauge(process)

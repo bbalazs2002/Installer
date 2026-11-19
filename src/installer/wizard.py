@@ -28,8 +28,8 @@ from .vault import (
 VaultProvider = Callable[[], Vault | None]
 
 _FORGOTTEN_WARNING = (
-    "A mester-jelszó sehol nincs eltárolva. Ha elfelejted, a jelszótár tartalma NEM állítható "
-    "helyre."
+    "The master password is stored nowhere. If you forget it, the contents of the vault CANNOT be "
+    "recovered."
 )
 
 
@@ -48,30 +48,30 @@ def open_vault_interactive(
 
         def ask(attempt: int) -> str:
             if attempt > 1:
-                ui.message("Hibás jelszó vagy sérült jelszótár.", title="Jelszótár")
-            return ui.secret("A jelszótár mester-jelszava:", title="Jelszótár")
+                ui.message("Wrong password or damaged vault.", title="Vault")
+            return ui.secret("Master password of the vault:", title="Vault")
 
         vault = unlock(path, ask, sleep=sleep)
         vault.register_secrets(redactor)
         return vault
 
     if not ui.confirm(
-        "Még nincs jelszótár. Létrehozod most?\n\n" + _FORGOTTEN_WARNING,
-        title="Jelszótár",
+        "There is no vault yet. Create it now?\n\n" + _FORGOTTEN_WARNING,
+        title="Vault",
         default=True,
     ):
         return None
     while True:
         first = ask_validated(
             ui,
-            "Új mester-jelszó (legalább 12 karakter):",
+            "New master password (at least 12 characters):",
             validate_master_password,
-            title="Jelszótár",
+            title="Vault",
             secret=True,
         )
-        if ui.secret("Mester-jelszó még egyszer:", title="Jelszótár") == first:
+        if ui.secret("Master password once more:", title="Vault") == first:
             break
-        ui.message("A két jelszó nem egyezik.", title="Jelszótár")
+        ui.message("The two passwords do not match.", title="Vault")
     path.parent.mkdir(parents=True, exist_ok=True)
     return Vault.create(path, first)
 
@@ -94,7 +94,7 @@ class InteractiveEnvConfigurator(EnvConfigurator):
             try:
                 self._vault = self._vault_provider()
             except VaultError as exc:
-                self._ui.message(f"A jelszótár nem használható: {exc}", title="Jelszótár")
+                self._ui.message(f"The vault cannot be used: {exc}", title="Vault")
                 self._vault = None
         return self._vault
 
@@ -125,8 +125,8 @@ class InteractiveEnvConfigurator(EnvConfigurator):
 
         # The advanced group comes last, behind one question; unopened, it keeps its defaults.
         open_advanced = bool(advanced) and self._ui.confirm(
-            "Megnyitod a speciális beállításokat?\n\n" + "\n".join(f"  {i.name}" for i in advanced),
-            title="Speciális beállítások",
+            "Open the advanced settings?\n\n" + "\n".join(f"  {i.name}" for i in advanced),
+            title="Advanced settings",
         )
         defaults = DefaultEnvConfigurator(self._redactor)
         for item in advanced:
@@ -151,14 +151,14 @@ class InteractiveEnvConfigurator(EnvConfigurator):
     def _ask(self, item: EnvVar) -> str | None:
         """A plain variable: Enter takes the default."""
         title = item.name
-        hint = f"\n\n({item.name}" + (f", alapérték: {item.default})" if item.default else ")")
+        hint = f"\n\n({item.name}" + (f", default: {item.default})" if item.default else ")")
         prompt = (item.description or item.name) + hint
 
         def validator(answer: str) -> str | None:
             if answer == "":
                 if item.default is not None or not item.required:
                     return None
-                return "Ez a mező kötelező."
+                return "This field is required."
             return check_value(item, answer)
 
         answer = ask_validated(self._ui, prompt, validator, title=title, default=item.default or "")
@@ -180,12 +180,12 @@ class InteractiveEnvConfigurator(EnvConfigurator):
         stored = vault.get(manifest.name, item.name) if vault is not None and allow_stored else None
         options: list[Item] = []
         if item.generate_bytes is not None:
-            options.append(Item("generate", "Generálás (véletlen érték)"))
-        options.append(Item("manual", "Kézi beírás (rejtett)"))
+            options.append(Item("generate", "Generate (random value)"))
+        options.append(Item("manual", "Type it in (hidden)"))
         if stored is not None:
-            options.append(Item("vault", "A jelszótárban lévő érték használata"))
+            options.append(Item("vault", "Use the value stored in the vault"))
         if not item.required:
-            options.append(Item("skip", "Üresen hagyom"))
+            options.append(Item("skip", "Leave it empty"))
         text = item.description or item.name
         if item.rotation_warning:
             text += f"\n\n{item.rotation_warning}"
@@ -197,7 +197,7 @@ class InteractiveEnvConfigurator(EnvConfigurator):
             assert stored is not None
             error = check_value(item, stored)
             if error is not None:
-                ui.message(f"A tárolt érték nem használható: {error}", title=item.name)
+                ui.message(f"The stored value cannot be used: {error}", title=item.name)
                 return self.ask_secret(manifest, item, to_vault, allow_stored=allow_stored)
             return stored
         if choice == "generate":
@@ -213,14 +213,14 @@ class InteractiveEnvConfigurator(EnvConfigurator):
         while True:
             first = ask_validated(
                 ui,
-                f"{item.name} értéke (rejtett):",
+                f"Value of {item.name} (hidden):",
                 lambda v: check_value(item, v),
                 title=item.name,
                 secret=True,
             )
-            if ui.secret("Még egyszer, megerősítésként:", title=item.name) == first:
+            if ui.secret("Once more, to confirm:", title=item.name) == first:
                 return first
-            ui.message("A két érték nem egyezik.", title=item.name)
+            ui.message("The two values do not match.", title=item.name)
 
     def save_to_vault(self, installation: str, secrets_: dict[str, str]) -> None:
         if not secrets_:
@@ -228,9 +228,9 @@ class InteractiveEnvConfigurator(EnvConfigurator):
         vault = self._get_vault()
         if vault is None:
             self._ui.message(
-                "A titkok nem kerültek jelszótárba, csak a .env.production tartalmazza őket. "
-                "Készíts róluk saját biztonsági másolatot.",
-                title="Jelszótár",
+                "The secrets were not saved to a vault; only .env.production contains them. "
+                "Make your own backup of them.",
+                title="Vault",
             )
             return
         try:
@@ -239,9 +239,9 @@ class InteractiveEnvConfigurator(EnvConfigurator):
             vault.save()
         except VaultError as exc:
             self._ui.message(
-                f"A titkokat nem sikerült a jelszótárba menteni ({exc}). "
-                "Csak a .env.production tartalmazza őket.",
-                title="Jelszótár",
+                f"Saving the secrets to the vault failed ({exc}). "
+                "Only .env.production contains them.",
+                title="Vault",
             )
 
     def _removals(
@@ -255,8 +255,8 @@ class InteractiveEnvConfigurator(EnvConfigurator):
             return ()
         listing = "\n".join(f"  {name}" for name in removed)
         if self._ui.confirm(
-            f"Az új kiadás már nem használja ezeket a változókat:\n\n{listing}\n\nTörlöd őket?",
-            title="Eltávolított változók",
+            f"The new release no longer uses these variables:\n\n{listing}\n\nDelete them?",
+            title="Removed variables",
         ):
             return tuple(removed)
         return ()

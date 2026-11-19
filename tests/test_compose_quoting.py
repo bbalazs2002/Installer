@@ -24,7 +24,7 @@ TRICKY = {
     "BACKSLASH": "back\\slash\\n",
     "DOUBLE_QUOTE": 'say "hi"',
     "LEADING_TRAILING": "  padded  ",
-    "UNICODE": "árvíztűrő tükörfúrógép",
+    "UNICODE": "ő ű café naïve Zürich",
     "PERCENT": "100%",
     "BACKTICK": "`cmd` $(cmd)",
     "EMPTY": "",

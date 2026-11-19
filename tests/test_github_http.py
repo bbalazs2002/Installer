@@ -62,7 +62,7 @@ class GitHubTestCase(unittest.TestCase):
 
 class TokenTests(GitHubTestCase):
     def test_invalid_tokens_rejected_up_front(self) -> None:
-        for bad in ["", "short", "has space in it", "tok\nen12345678", "ékezetes_token_123"]:
+        for bad in ["", "short", "has space in it", "tok\nen12345678", "tökén_with_accents_1"]:
             with self.subTest(token=bad), self.assertRaises(GitHubAuthError):
                 HttpGitHub(bad)
 
@@ -114,9 +114,9 @@ class ExpiryTests(unittest.TestCase):
 
         self.assertIsNone(warn(None))
         self.assertIsNone(warn(timedelta(days=30)))
-        self.assertIn("lejár", warn(timedelta(days=13)) or "")
-        self.assertIn("lejár", warn(timedelta(days=14)) or "")
-        self.assertIn("lejárt", warn(timedelta(seconds=-1)) or "")
+        self.assertIn("expires", warn(timedelta(days=13)) or "")
+        self.assertIn("expires", warn(timedelta(days=14)) or "")
+        self.assertIn("expired", warn(timedelta(seconds=-1)) or "")
 
 
 class ReleaseListTests(GitHubTestCase):
@@ -149,7 +149,7 @@ class ReleaseListTests(GitHubTestCase):
         self.fake.state.api_base = "http://evil.example:9"  # makes the Link point away
         with self.assertRaises(GitHubError) as ctx:
             self.client.list_releases("o/r")
-        self.assertIn("idegen", str(ctx.exception))
+        self.assertIn("foreign", str(ctx.exception))
         self.assertEqual(len(self.fake.state.api_requests), 1)
 
     def test_latest_stable_skips_prereleases(self) -> None:
@@ -172,13 +172,13 @@ class ReleaseListTests(GitHubTestCase):
                 "v1.0.0",
                 asset_ids=((7, "deploy.json", 12),),
                 published="2026-11-02T08:00:00Z",
-                body="Változások",
+                body="Changes",
             )
         ]
         (release,) = self.client.list_releases("o/r")
         self.assertEqual(release.assets, (Asset(7, "deploy.json", 12),))
         self.assertEqual(release.published_at, datetime(2026, 11, 2, 8, tzinfo=timezone.utc))
-        self.assertEqual(release.body, "Változások")
+        self.assertEqual(release.body, "Changes")
 
 
 class CacheTests(GitHubTestCase):

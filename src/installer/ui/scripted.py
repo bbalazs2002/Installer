@@ -63,7 +63,7 @@ class ScriptedUi(Ui):
 
     def _next(self, kind: str) -> Any:
         if not self._answers:
-            raise AssertionError(f"ScriptedUi: nincs több előre megadott válasz ({kind})")
+            raise AssertionError(f"ScriptedUi: no more prepared answers ({kind})")
         answer = self._answers.popleft()
         if answer is UiBack or isinstance(answer, UiBack):
             raise UiBack()
@@ -73,7 +73,7 @@ class ScriptedUi(Ui):
         answer = self._next(kind)
         keys = [i.key for i in items]
         if not isinstance(answer, str) or answer not in keys:
-            raise AssertionError(f"ScriptedUi: {answer!r} nem elem ({kind}): {keys}")
+            raise AssertionError(f"ScriptedUi: {answer!r} is not an item ({kind}): {keys}")
         return answer
 
     def menu(
@@ -93,7 +93,7 @@ class ScriptedUi(Ui):
         answer = self._next("choose_many")
         keys = {i.key for i in items}
         if not isinstance(answer, list) or not set(answer) <= keys:
-            raise AssertionError(f"ScriptedUi: érvénytelen választás: {answer!r}")
+            raise AssertionError(f"ScriptedUi: invalid choice: {answer!r}")
         return list(answer)
 
     def text(self, prompt: str, *, title: str = "", default: str = "") -> str:
@@ -102,21 +102,21 @@ class ScriptedUi(Ui):
         if answer is self.DEFAULT:
             return default
         if not isinstance(answer, str):
-            raise AssertionError(f"ScriptedUi: szöveg kellene, kapott: {answer!r}")
+            raise AssertionError(f"ScriptedUi: expected text, got: {answer!r}")
         return answer
 
     def secret(self, prompt: str, *, title: str = "") -> str:
         self.calls.append(Call("secret", title, prompt))
         answer = self._next("secret")
         if not isinstance(answer, str):
-            raise AssertionError("ScriptedUi: szöveg kellene a titokhoz")
+            raise AssertionError("ScriptedUi: expected text for the secret")
         return answer
 
     def confirm(self, prompt: str, *, title: str = "", default: bool = False) -> bool:
         self.calls.append(Call("confirm", title, prompt))
         answer = self._next("confirm")
         if not isinstance(answer, bool):
-            raise AssertionError(f"ScriptedUi: igaz/hamis kellene, kapott: {answer!r}")
+            raise AssertionError(f"ScriptedUi: expected true/false, got: {answer!r}")
         return answer
 
     def message(self, text: str, *, title: str = "", scroll: bool = False) -> None:

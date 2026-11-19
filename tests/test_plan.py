@@ -92,7 +92,7 @@ class NewInstallTests(unittest.TestCase):
         plan = build_plan(request("0.1.0", TargetState(exists=True, empty=False)))
         self.assertEqual(plan.kind, PlanKind.NEW)
         self.assertFalse(plan.can_proceed)
-        self.assertIn("nem üres", plan.blockers[0])
+        self.assertIn("not empty", plan.blockers[0])
 
     def test_steps_with_and_without_database(self) -> None:
         with_db = step_ids(build_plan(request("0.1.0")))
@@ -110,7 +110,7 @@ class NewInstallTests(unittest.TestCase):
     def test_prerelease_and_manifest_warnings_are_carried(self) -> None:
         mf = manifest(futureKey=1)
         plan = build_plan(request("0.2.0-rc.1", mf=mf))
-        self.assertTrue(any("előzetes" in w for w in plan.warnings))
+        self.assertTrue(any("pre-release" in w for w in plan.warnings))
         self.assertTrue(any("futureKey" in w for w in plan.warnings))
 
     def test_registry_name_collision_elsewhere_blocks(self) -> None:
@@ -130,7 +130,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(plan.kind, PlanKind.UPDATE)
         self.assertTrue(plan.can_proceed)
         self.assertEqual(plan.installed_version, "0.1.0")
-        self.assertIn("Ez frissítés, nem új telepítés: 0.1.0 → 0.2.0", plan.warnings)
+        self.assertIn("This is an update, not a new installation: 0.1.0 → 0.2.0", plan.warnings)
         ids = step_ids(plan)
         self.assertIn(StepId.COMPOSE_REVIEW, ids)
         self.assertIn(StepId.DB_BACKUP, ids)
@@ -155,10 +155,10 @@ class SameVersionTests(unittest.TestCase):
         plan = build_plan(request("0.1.0", installed("0.1.0")))
         self.assertEqual(plan.kind, PlanKind.SAME)
         self.assertTrue(plan.can_proceed)
-        self.assertTrue(any("már telepítve" in w for w in plan.warnings))
+        self.assertTrue(any("already installed" in w for w in plan.warnings))
         assert plan.confirmation is not None
         self.assertEqual(plan.confirmation.kind, ConfirmKind.CONFIRM)
-        self.assertIn("Újratelepíted", plan.confirmation.prompt)
+        self.assertIn("Reinstall it?", plan.confirmation.prompt)
 
     def test_build_metadata_does_not_make_it_different(self) -> None:
         self.assertEqual(build_plan(request("0.1.0+b2", installed("0.1.0+b1"))).kind, PlanKind.SAME)
@@ -175,10 +175,10 @@ class DowngradeTests(unittest.TestCase):
         assert plan.confirmation is not None
         self.assertEqual(plan.confirmation.kind, ConfirmKind.TYPE)
         self.assertEqual(plan.confirmation.phrase, DOWNGRADE_PHRASE)
-        self.assertTrue(plan.confirmation.accepts("VISSZALÉPÉS"))
-        self.assertFalse(plan.confirmation.accepts("visszalépés"))
+        self.assertTrue(plan.confirmation.accepts("DOWNGRADE"))
+        self.assertFalse(plan.confirmation.accepts("downgrade"))
         self.assertFalse(plan.confirmation.accepts(""))
-        self.assertTrue(any(w.startswith("VISSZALÉPÉS") for w in plan.warnings))
+        self.assertTrue(any(w.startswith("DOWNGRADE") for w in plan.warnings))
 
     def test_requested_has_more_migrations_is_allowed(self) -> None:
         plan = build_plan(request("0.1.0", installed("0.2.0", ("m1",)), migrations=("m1", "m2")))
@@ -192,7 +192,7 @@ class DowngradeTests(unittest.TestCase):
         self.assertFalse(plan.can_proceed)
         self.assertEqual(plan.extra_migrations, ("m2", "m3"))
         self.assertIsNone(plan.restore_backup)
-        self.assertTrue(any("Nincs" in w and "mentés" in w for w in plan.warnings))
+        self.assertTrue(any("no database backup" in w for w in plan.warnings))
 
     def test_blocked_downgrade_offers_matching_backup(self) -> None:
         backups = [
@@ -206,12 +206,12 @@ class DowngradeTests(unittest.TestCase):
         self.assertFalse(plan.can_proceed)
         assert plan.restore_backup is not None
         self.assertEqual(plan.restore_backup.path, "/b/new.dump")
-        self.assertTrue(any("elvesznek" in w for w in plan.warnings))
+        self.assertTrue(any("will be lost" in w for w in plan.warnings))
 
     def test_many_extra_migrations_are_summarised(self) -> None:
         many = tuple(f"m{i}" for i in range(9))
         plan = build_plan(request("0.1.0", installed("0.2.0", many), migrations=()))
-        self.assertIn("+4 további", plan.blockers[0])
+        self.assertIn("+4 more", plan.blockers[0])
 
     def test_missing_requested_migration_list_blocks_when_database(self) -> None:
         plan = build_plan(request("0.1.0", installed("0.2.0"), migrations=None))
@@ -251,11 +251,11 @@ class BlockingStateTests(unittest.TestCase):
         self.assertEqual(build_plan(request("0.1.0", state)).kind, PlanKind.OTHER_REPO)
 
     def test_unreadable_install_json_blocks(self) -> None:
-        state = TargetState(exists=True, empty=False, unreadable_reason="nem érvényes JSON")
+        state = TargetState(exists=True, empty=False, unreadable_reason="not valid JSON")
         plan = build_plan(request("0.1.0", state))
         self.assertEqual(plan.kind, PlanKind.BLOCKED)
         self.assertFalse(plan.can_proceed)
-        self.assertIn("nem érvényes JSON", plan.blockers[0])
+        self.assertIn("not valid JSON", plan.blockers[0])
 
     def test_unparsable_installed_version_blocks(self) -> None:
         plan = build_plan(request("0.1.0", installed("garbage")))
@@ -266,15 +266,15 @@ class BlockingStateTests(unittest.TestCase):
 class FormatTests(unittest.TestCase):
     def test_format_contains_kind_warnings_and_steps(self) -> None:
         text = format_plan(build_plan(request("0.2.0", installed("0.1.0"))))
-        self.assertIn("Frissítés", text)
+        self.assertIn("Update", text)
         self.assertIn("0.1.0 → 0.2.0", text)
-        self.assertIn("Lépések:", text)
+        self.assertIn("Steps:", text)
         self.assertIn("/healthz", text)
 
     def test_format_blocked_hides_steps(self) -> None:
         text = format_plan(build_plan(request("0.1.0", TargetState(exists=True, empty=False))))
-        self.assertIn("Akadályok:", text)
-        self.assertNotIn("Lépések:", text)
+        self.assertIn("Blockers:", text)
+        self.assertNotIn("Steps:", text)
 
 
 if __name__ == "__main__":

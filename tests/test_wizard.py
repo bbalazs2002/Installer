@@ -48,18 +48,18 @@ ENV = [
     {"name": "NODE_ENV", "fixed": "production"},
     {
         "name": "BASE_PATH",
-        "description": "Alútvonal",
+        "description": "Base path",
         "default": "/investment/",
         "validate": "^/.*/$",
     },
     {
         "name": "APIKEY_MASTER_SECRET",
-        "description": "Mester titok",
+        "description": "Master secret",
         "secret": True,
         "required": True,
         "generate": {"bytes": 48},
         "minLength": 20,
-        "rotationWarning": "Csere után a kulcsok elvesznek.",
+        "rotationWarning": "After the change the existing keys are lost.",
     },
     {"name": "TWELVEDATA_API_KEY", "secret": True, "required": False},
     {"name": "INTRADAY", "default": "false", "validate": "^(true|false)$", "group": "advanced"},
@@ -150,7 +150,7 @@ class NewInstallTests(WizardTestCase):
         menu = next(
             c for c in self.ui.calls if c.kind == "menu" and c.title == "APIKEY_MASTER_SECRET"
         )
-        self.assertIn("Csere után", menu.text)
+        self.assertIn("After the change", menu.text)
 
     def test_required_secret_cannot_be_skipped(self) -> None:
         self.run_new(["", "generate", "skip", False])
@@ -209,7 +209,7 @@ class VaultUseTests(WizardTestCase):
     def test_without_vault_secrets_are_kept_only_in_env_with_a_notice(self) -> None:
         self.ui.push("", "generate", "skip", False)
         self.wizard(with_vault=False).configure(manifest(ENV), {}, is_new=True)
-        self.assertTrue(any("jelszótárba" in m for m in self.ui.messages()))
+        self.assertTrue(any("not saved to a vault" in m for m in self.ui.messages()))
 
     def test_vault_is_unlocked_only_once(self) -> None:
         calls: list[int] = []
@@ -288,7 +288,7 @@ class OpenVaultTests(unittest.TestCase):
         assert vault is not None
         self.assertTrue(self.path.is_file())
         confirm = next(c for c in ui.calls if c.kind == "confirm")
-        self.assertIn("NEM állítható", confirm.text)
+        self.assertIn("CANNOT be recovered", confirm.text)
         self.assertEqual(len(ui.messages()), 1)  # the "too short" complaint
 
     def test_password_confirmation_mismatch_starts_over(self) -> None:
