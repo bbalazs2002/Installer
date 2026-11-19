@@ -1,4 +1,4 @@
-"""The GitHub token file (``~/.config/telepito/token``, mode 600).
+"""The GitHub token file (``~/.config/installer/token``, mode 600).
 
 The token is deliberately kept out of the password vault: it is needed at startup, before a
 master password could be asked for (specification 8.2).
@@ -17,8 +17,13 @@ _DIR_MODE = 0o700
 
 
 class TokenStore:
-    def __init__(self, path: Path) -> None:
+    """Reads and writes the token. ``legacy`` is an older location that is still *read* when the
+    current file does not exist (a token saved by an earlier version keeps working); new tokens
+    are always written to ``path``."""
+
+    def __init__(self, path: Path, legacy: Path | None = None) -> None:
         self._path = path
+        self._legacy = legacy
 
     @property
     def path(self) -> Path:
@@ -26,13 +31,17 @@ class TokenStore:
 
     def load(self) -> str | None:
         """The stored token, or ``None`` if there is none (or the file is empty)."""
-        try:
-            token = self._path.read_text(encoding="utf-8").strip()
-        except FileNotFoundError:
-            return None
-        except (OSError, UnicodeDecodeError) as exc:
-            raise TelepitoError(f"The token file cannot be read: {exc}") from exc
-        return token or None
+        for candidate in (self._path, self._legacy):
+            if candidate is None:
+                continue
+            try:
+                token = candidate.read_text(encoding="utf-8").strip()
+            except FileNotFoundError:
+                continue
+            except (OSError, UnicodeDecodeError) as exc:
+                raise TelepitoError(f"The token file cannot be read: {exc}") from exc
+            return token or None
+        return None
 
     def save(self, token: str) -> None:
         token = token.strip()
@@ -42,7 +51,10 @@ class TokenStore:
         atomic_write_text(self._path, token + "\n", TOKEN_MODE)
 
     def delete(self) -> None:
-        try:
-            os.unlink(self._path)
-        except FileNotFoundError:
-            pass
+        for candidate in (self._path, self._legacy):
+            if candidate is None:
+                continue
+            try:
+                os.unlink(candidate)
+            except FileNotFoundError:
+                pass

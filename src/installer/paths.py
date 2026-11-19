@@ -16,12 +16,16 @@ from .selfupdate import running_pyz
 
 STATE_DIR_ENV = "TELEPITO_STATE_DIR"
 TOKEN_FILE_ENV = "TELEPITO_TOKEN_FILE"
+CONFIG_DIR_NAME = "installer"  # ~/.config/installer/token
+LEGACY_CONFIG_DIR_NAME = "telepito"  # where 0.1.0 kept the token; still read if present
 
 
 @dataclass(frozen=True)
 class Paths:
     state_dir: Path
     token_file: Path
+    # The pre-0.1.1 token location; only set when the default location is in use.
+    legacy_token_file: Path | None = None
 
     @property
     def repos_file(self) -> Path:
@@ -67,9 +71,12 @@ def default_paths(
                 f"Pass --state-dir or set {STATE_DIR_ENV}."
             )
         state = pyz.parent
-    token = (
-        token_file
-        or os.environ.get(TOKEN_FILE_ENV)
-        or Path.home() / ".config" / "telepito" / "token"
+    explicit = token_file or os.environ.get(TOKEN_FILE_ENV)
+    if explicit:
+        return Paths(Path(state), Path(explicit))
+    config = Path.home() / ".config"
+    return Paths(
+        Path(state),
+        config / CONFIG_DIR_NAME / "token",
+        legacy_token_file=config / LEGACY_CONFIG_DIR_NAME / "token",
     )
-    return Paths(Path(state), Path(token))

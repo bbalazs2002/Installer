@@ -9,6 +9,8 @@
 - **The installer directory is no longer fixed.** By default the installer keeps its files
   (`installs.json`, `repos.json`, `vault/`, `logs/`, `tmp/`) in the directory that contains
   `telepito.pyz`; `--state-dir` and `TELEPITO_STATE_DIR` still override it.
+- The GitHub token now lives in `~/.config/installer/token`. A token left by 0.1.0 in
+  `~/.config/telepito/token` is still read if the new file does not exist.
 - Downgrade confirmation word: `DOWNGRADE`.
 
 ## 0.1.0

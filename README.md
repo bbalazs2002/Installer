@@ -108,13 +108,15 @@ A successful run prints `telepito.pyz: OK`. The token only lives in the subshell
 file, so its own files and the self-update always use the real directory.)
 
 Open *Settings → Set and verify the GitHub token*: the token is entered hidden and saved to
-`~/.config/telepito/token` (mode 600). The installer checks that it can reach a repository and
+`~/.config/installer/token` (mode 600). The installer checks that it can reach a repository and
 warns when the token expires within 14 days.
 
 Then *Install / update*: repository, release, target directory, port, plan, confirmation.
 
 To keep the installer's files somewhere else than next to `telepito.pyz`, use `--state-dir
-<dir>` or the `TELEPITO_STATE_DIR` environment variable.
+<dir>` or the `TELEPITO_STATE_DIR` environment variable; the token file can be moved with
+`--token-file <file>` or `TELEPITO_TOKEN_FILE`. A token saved by 0.1.0 in
+`~/.config/telepito/token` is still read when `~/.config/installer/token` does not exist.
 
 ## Usage
 
@@ -158,7 +160,7 @@ Exit codes: `0` success, `1` failure, `2` cancelled by the user, `3` a prerequis
   logs/YYYY-MM-DD.log              log (secrets masked)
   tmp/                             temporary downloads (the installer cleans them up)
   .lock                            prevents concurrent runs
-~/.config/telepito/token           GitHub token (600)
+~/.config/installer/token           GitHub token (600)
 
 /var/www/<application>/            (the target directory you choose)
   releases/<version>/              the release (compose, deploy.json, .env.production -> ../../shared/...)

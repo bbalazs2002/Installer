@@ -118,7 +118,7 @@ def main(
             ui=ui or BatchUi(),
             log=log,
             docker=docker or SubprocessDocker(redactor=redactor),
-            tokens=TokenStore(paths.token_file),
+            tokens=TokenStore(paths.token_file, paths.legacy_token_file),
             github_factory=github_factory,
             health=health,
         )

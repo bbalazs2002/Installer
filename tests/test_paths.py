@@ -55,7 +55,7 @@ class StateDirTests(unittest.TestCase):
     def test_token_file_defaults_to_the_users_config_directory(self) -> None:
         with pyz("/var/Installer/telepito.pyz"):
             self.assertEqual(
-                default_paths().token_file, Path.home() / ".config" / "telepito" / "token"
+                default_paths().token_file, Path.home() / ".config" / "installer" / "token"
             )
             os.environ[TOKEN_FILE_ENV] = "/from/env/token"
             self.assertEqual(default_paths().token_file, Path("/from/env/token"))
