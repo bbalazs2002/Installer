@@ -1,8 +1,8 @@
 """The single place for Docker calls: an interface plus the data it exchanges.
 
-T.0 defines only the interface and data types. The real implementation (subprocess with
-list arguments, ``shell=False``, timeouts, secrets only via stdin) arrives in T.2, together
-with a recording fake for tests.
+The real implementation (``docker_cli.SubprocessDocker``) runs every command with list arguments
+(``shell=False``) and a timeout, and passes secrets only through stdin or files, never through
+arguments or the environment. Tests use an in-process fake (``tests/fake_docker.py``).
 """
 
 from __future__ import annotations
@@ -56,6 +56,10 @@ class Docker(ABC):
     @abstractmethod
     def inspect_container(self, name: str) -> ContainerInfo:
         """One container by name; raises :class:`DockerError` if it does not exist."""
+
+    @abstractmethod
+    def root_dir(self) -> str | None:
+        """Docker's data directory (for the free-space check), if it can be determined."""
 
     @abstractmethod
     def image_exists(self, reference: str) -> bool: ...

@@ -13,3 +13,11 @@ class TelepitoError(Exception):
 
     The message is shown to the user as-is (in Hungarian).
     """
+
+
+class UserAbort(TelepitoError):
+    """The user declined or cancelled an operation (exit code 2)."""
+
+
+class PrerequisiteError(TelepitoError):
+    """A required tool or condition is missing (exit code 3)."""
