@@ -1,0 +1,149 @@
+"""Updating the installer itself (specification 5.8, 12).
+
+The installer ships as one file, ``telepito.pyz``, attached to a release of its own repository
+together with a ``SHA256SUMS``. An update downloads both, verifies the checksum, *runs* the new
+file once (``--version``) to make sure it works on this Python and is the version it claims to
+be, keeps the old file as ``telepito.pyz.previous``, and only then replaces the running file
+atomically. A failed step at any point leaves the installed file untouched.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+from . import __version__
+from .errors import TelepitoError
+from .fsutil import atomic_write_bytes
+from .github import GitHub, Release
+from .installer import ReleaseError, parse_sums, verify_file
+from .logging_ import Logger
+from .versions import Version
+
+SELF_REPO = "bbalazs2002/Installer"
+PYZ_ASSET = "telepito.pyz"
+SUMS_ASSET = "SHA256SUMS"
+PREVIOUS_SUFFIX = ".previous"
+DEFAULT_MODE = 0o750
+CHECK_TIMEOUT = 30
+
+
+class SelfUpdateError(TelepitoError):
+    """The update cannot be applied; the installed file is unchanged."""
+
+
+@dataclass(frozen=True)
+class SelfUpdateResult:
+    old_version: str
+    new_version: str
+    previous_file: Path
+
+
+def running_pyz() -> Path | None:
+    """The ``telepito.pyz`` this process runs from, or ``None`` (e.g. a source checkout)."""
+    candidate = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
+    if candidate is None:
+        return None
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        return None
+    return resolved if resolved.suffix == ".pyz" and resolved.is_file() else None
+
+
+def find_update(github: GitHub, current: str = __version__) -> Release | None:
+    """The newest stable release of the installer, if it is newer than ``current``."""
+    release = github.latest_stable(SELF_REPO)
+    if release is None or release.version is None:
+        return None
+    running = Version.try_parse(current)
+    if running is not None and release.version <= running:
+        return None
+    return release
+
+
+def apply_update(github: GitHub, release: Release, pyz_path: Path, log: Logger) -> SelfUpdateResult:
+    """Download, verify, test and install ``release`` over ``pyz_path``."""
+    version = release.version
+    if version is None:
+        raise SelfUpdateError(f"A(z) {release.tag} címke nem érvényes verzió.")
+    if pyz_path.suffix != ".pyz" or not pyz_path.is_file():
+        raise SelfUpdateError(
+            "Csak a telepito.pyz fájlból futó telepítő frissíthető (ez most nem az)."
+        )
+    pyz_asset, sums_asset = release.asset(PYZ_ASSET), release.asset(SUMS_ASSET)
+    if pyz_asset is None or sums_asset is None:
+        raise SelfUpdateError(f"A kiadásból hiányzik a(z) {PYZ_ASSET} vagy a {SUMS_ASSET}.")
+
+    directory = pyz_path.parent
+    try:
+        mode = stat.S_IMODE(pyz_path.stat().st_mode) or DEFAULT_MODE
+        scratch = Path(tempfile.mkdtemp(prefix=".telepito-update-", dir=directory))
+    except OSError as exc:
+        raise SelfUpdateError(
+            f"A(z) {directory} mappába nem lehet írni ({exc}), a frissítés nem lehetséges."
+        ) from exc
+
+    try:
+        sums_path, new_path = scratch / SUMS_ASSET, scratch / PYZ_ASSET
+        log.info(f"Önfrissítés: {__version__} -> {version} ({release.tag})")
+        github.download_asset(SELF_REPO, sums_asset, sums_path)
+        github.download_asset(SELF_REPO, pyz_asset, new_path)
+        sums = parse_sums(sums_path.read_text(encoding="utf-8"))
+        expected = sums.get(PYZ_ASSET)
+        if expected is None:
+            raise SelfUpdateError(f"A {SUMS_ASSET} nem tartalmazza a(z) {PYZ_ASSET} összegét.")
+        try:
+            verify_file(new_path, expected, PYZ_ASSET)
+        except ReleaseError as exc:
+            raise SelfUpdateError(str(exc)) from exc
+        _smoke_test(new_path, version)
+
+        previous = pyz_path.with_name(pyz_path.name + PREVIOUS_SUFFIX)
+        atomic_write_bytes(previous, pyz_path.read_bytes(), mode)
+        os.chmod(new_path, mode)
+        os.replace(new_path, pyz_path)
+        log.info(f"A telepítő frissítve: {version}. A régi fájl: {previous.name}")
+        return SelfUpdateResult(__version__, str(version), previous)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _smoke_test(candidate: Path, expected: Version) -> None:
+    """Run the downloaded file once: it must start here and report the expected version."""
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-I", str(candidate), "--version"],
+            capture_output=True,
+            timeout=CHECK_TIMEOUT,
+            shell=False,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SelfUpdateError(f"Az új telepítő nem indítható el ({exc}).") from exc
+    output = completed.stdout.decode("utf-8", errors="replace").strip()
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip().splitlines()[-1:]
+        raise SelfUpdateError(
+            "Az új telepítő nem fut ezen a Pythonon" + (f": {detail[0]}" if detail else ".")
+        )
+    if output != f"telepito {expected}":
+        raise SelfUpdateError(
+            f"Az új telepítő más verziót jelez ({output!r}), mint a kiadás ({expected})."
+        )
+
+
+__all__ = [
+    "SELF_REPO",
+    "SelfUpdateError",
+    "SelfUpdateResult",
+    "apply_update",
+    "find_update",
+    "running_pyz",
+]

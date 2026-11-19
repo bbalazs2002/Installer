@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import __version__
 from .docker import Docker
 from .envconfig import EnvConfigurator
 from .errors import PrerequisiteError, TelepitoError, UserAbort
@@ -24,6 +25,7 @@ from .logging_ import Logger
 from .manifest import Manifest, load_manifest
 from .paths import Paths
 from .postgres import PostgresOps
+from .selfupdate import running_pyz
 from .state import (
     InstallInfo,
     InstallRecord,
@@ -38,6 +40,10 @@ from .vault import Vault
 from .wizard import InteractiveEnvConfigurator, open_vault_interactive
 
 GithubFactory = Callable[[str], GitHub]
+
+
+class ExitRequested(Exception):  # noqa: N818 - control flow, not an error
+    """Ask the main menu to end (e.g. after a self-update: the new version must be started)."""
 
 
 def _utcnow() -> datetime:
@@ -61,6 +67,8 @@ class Context:
     disk_free: Callable[[Path], int] | None = None
     env_configurator: EnvConfigurator | None = None
     db_ops: DatabaseOps | None = None
+    # The ``telepito.pyz`` being executed (``None`` outside a zipapp); the self-update target.
+    pyz_path: Path | None = field(default_factory=running_pyz)
     _vault: Vault | None = field(default=None, repr=False)
     _github: tuple[str, GitHub] | None = field(default=None, repr=False)
 
@@ -215,13 +223,18 @@ def run_menu(ctx: Context, *, updates_hint: Callable[[], int] | None = None) -> 
                 label += f"  ({pending} frissítés elérhető)"
             items.append(Item(key, label))
         try:
-            choice = ctx.ui.menu("Telepítő — főmenü", items, default=default)
+            choice = ctx.ui.menu(
+                "Telepítő — főmenü", items, text=f"telepito {__version__}", default=default
+            )
         except UiBack:
             return 0
         if choice == "quit":
             return 0
         default = choice
-        run_action(ctx, actions[choice])
+        try:
+            run_action(ctx, actions[choice])
+        except ExitRequested:
+            return 0
         if choice in ("install", "updates"):
             pending = updates_hint() if updates_hint is not None else 0
 

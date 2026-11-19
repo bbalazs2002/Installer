@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telepito"
-version = "0.0.0"
+dynamic = ["version"]
 description = "Interactive installer for Dockerized GitHub release deployments"
 requires-python = ">=3.10"
 # No runtime dependencies: the installer uses only the Python standard library.
@@ -12,6 +12,9 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["ruff", "mypy"]
+
+[tool.setuptools.dynamic]
+version = { attr = "telepito.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

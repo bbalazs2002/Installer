@@ -115,6 +115,25 @@ class MemoryGitHub(GitHub):
         self._releases.append(release)
         return release
 
+    def add_raw(self, tag: str, files: dict[str, bytes], *, prerelease: bool = False) -> Release:
+        """A release made of arbitrary files (used for the installer's own releases)."""
+        assets = []
+        for name, data in files.items():
+            asset = Asset(self._next_id, name, len(data))
+            self._files[asset.id] = data
+            assets.append(asset)
+            self._next_id += 1
+        release = Release(
+            tag=tag,
+            name=tag,
+            prerelease=prerelease,
+            published_at=datetime(2026, 11, 1, tzinfo=timezone.utc),
+            body="",
+            assets=tuple(assets),
+        )
+        self._releases.append(release)
+        return release
+
     def check_access(self, repo: str) -> TokenStatus:
         return TokenStatus(None)
 

@@ -232,6 +232,40 @@ def _manage_repos(ctx: Context) -> None:
 
 
 def selfupdate_screen(ctx: Context) -> None:
-    ctx.ui.message(
-        "A telepítő önfrissítése a következő kiadásban érkezik.", title="A telepítő frissítése"
+    from . import __version__
+    from .app import ExitRequested
+    from .selfupdate import SELF_REPO, apply_update, find_update
+
+    ui = ctx.ui
+    if ctx.pyz_path is None:
+        ui.message(
+            "Ez a példány nem a telepito.pyz fájlból fut (fejlesztői indítás), "
+            "ezért nem frissíthető.",
+            title="A telepítő frissítése",
+        )
+        return
+    github = ctx.github()
+    release = find_update(github, __version__)
+    if release is None:
+        ui.message(f"A telepítő naprakész (telepito {__version__}).", title="A telepítő frissítése")
+        return
+    if not ui.confirm(
+        f"Új telepítő érhető el: {__version__} → {release.version}\n\n"
+        f"Forrás: {SELF_REPO}, kiadás {release.tag}\n"
+        "Letöltöm, ellenőrzöm az összeget, kipróbálom, és kicserélem a telepito.pyz fájlt "
+        "(a régi megmarad .previous néven).",
+        title="A telepítő frissítése",
+        default=True,
+    ):
+        return
+    with ui.progress("A telepítő frissítése", f"{release.tag} letöltése...") as bar:
+        bar.update(10)
+        result = apply_update(github, release, ctx.pyz_path, ctx.log)
+        bar.update(100)
+    ui.message(
+        f"A telepítő frissítve: {result.old_version} → {result.new_version}.\n"
+        f"A régi fájl: {result.previous_file}\n\n"
+        "A telepítő most kilép; indítsd újra az új verzióval.",
+        title="A telepítő frissítése",
     )
+    raise ExitRequested
