@@ -2,7 +2,7 @@
 
 File layout::
 
-    TELEPITO-VAULT 1 scrypt N=32768 r=8 p=1 <32 hex chars of salt>\\n   (header, plain text)
+    INSTALLER-VAULT 1 scrypt N=32768 r=8 p=1 <32 hex chars of salt>\\n   (header, plain text)
     <openssl enc output: "Salted__" + salt + AES-256-CBC ciphertext>
     <32 bytes: HMAC-SHA256 over header + ciphertext>
 
@@ -34,12 +34,13 @@ import unicodedata
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from .errors import PrerequisiteError, TelepitoError
+from .errors import InstallerError, PrerequisiteError
 from .fsutil import atomic_write_bytes
 from .logging_ import Redactor
 from .validators import is_app_name, is_env_name
 
-MAGIC = "TELEPITO-VAULT"
+MAGIC = "INSTALLER-VAULT"
+LEGACY_MAGIC = "TELEPITO-VAULT"  # written by 0.1.x; still readable, rewritten on the next save
 FORMAT_VERSION = 1
 SCRYPT_N = 2**15
 SCRYPT_R = 8
@@ -54,12 +55,12 @@ OPENSSL_TIMEOUT = 30
 BACKOFF_CAP = 30.0
 
 _HEADER_RE = re.compile(
-    rf"^{MAGIC} (\d+) scrypt N={SCRYPT_N} r={SCRYPT_R} p={SCRYPT_P} ([0-9a-f]{{{SALT_LEN * 2}}})$"
+    rf"^(?:{MAGIC}|{LEGACY_MAGIC}) (\d+) scrypt N={SCRYPT_N} r={SCRYPT_R} p={SCRYPT_P} ([0-9a-f]{{{SALT_LEN * 2}}})$"
 )
 _MSG_AUTH = "Wrong password or damaged vault."
 
 
-class VaultError(TelepitoError):
+class VaultError(InstallerError):
     """The vault cannot be used (unsupported format, missing openssl, misuse)."""
 
 

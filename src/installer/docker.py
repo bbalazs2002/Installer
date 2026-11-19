@@ -12,10 +12,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .errors import TelepitoError
+from .errors import InstallerError
 
 
-class DockerError(TelepitoError):
+class DockerError(InstallerError):
     """A Docker call failed or Docker is unavailable. The message is user-facing."""
 
 

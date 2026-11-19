@@ -16,10 +16,11 @@ from pathlib import Path
 from . import __version__
 from .docker import Docker
 from .envconfig import EnvConfigurator
-from .errors import PrerequisiteError, TelepitoError, UserAbort
+from .errors import InstallerError, PrerequisiteError, UserAbort
 from .github import GitHub, GitHubAuthError
 from .github_http import HttpGitHub
 from .health import HealthChecker, http_health
+from .identity import PROGRAM
 from .installer import MANIFEST_ASSET, DatabaseOps, Deps, Installer, Layout
 from .logging_ import Logger
 from .manifest import Manifest, load_manifest
@@ -67,7 +68,7 @@ class Context:
     disk_free: Callable[[Path], int] | None = None
     env_configurator: EnvConfigurator | None = None
     db_ops: DatabaseOps | None = None
-    # The ``telepito.pyz`` being executed (``None`` outside a zipapp); the self-update target.
+    # The ``installer.pyz`` being executed (``None`` outside a zipapp); the self-update target.
     pyz_path: Path | None = field(default_factory=running_pyz)
     _vault: Vault | None = field(default=None, repr=False)
     _github: tuple[str, GitHub] | None = field(default=None, repr=False)
@@ -137,14 +138,16 @@ class Context:
         target = Path(record.path)
         info = load_install_info(target)
         if info is None:
-            raise TelepitoError(f"There is no installation in {record.path}.")
+            raise InstallerError(f"There is no installation in {record.path}.")
         layout = Layout(target)
         try:
             manifest = load_manifest(
                 (layout.release_dir(info.version) / MANIFEST_ASSET).read_bytes()
             )
         except OSError as exc:
-            raise TelepitoError(f"The installed release's descriptor is unreadable: {exc}") from exc
+            raise InstallerError(
+                f"The installed release's descriptor is unreadable: {exc}"
+            ) from exc
         return info, manifest, layout
 
     def pick_install(self, title: str, *, with_database: bool = False) -> InstallRecord | None:
@@ -168,7 +171,7 @@ class Context:
     def _has_database(self, record: InstallRecord) -> bool:
         try:
             info = load_install_info(Path(record.path))
-        except TelepitoError:
+        except InstallerError:
             return False
         return info is not None and info.database is not None
 
@@ -224,7 +227,7 @@ def run_menu(ctx: Context, *, updates_hint: Callable[[], int] | None = None) -> 
             items.append(Item(key, label))
         try:
             choice = ctx.ui.menu(
-                "Installer — main menu", items, text=f"telepito {__version__}", default=default
+                "Installer — main menu", items, text=f"{PROGRAM} {__version__}", default=default
             )
         except UiBack:
             return 0
@@ -251,6 +254,6 @@ def run_action(ctx: Context, action: Callable[[Context], None]) -> None:
     except PrerequisiteError as exc:
         ctx.log.error(str(exc))
         ctx.ui.message(str(exc), title="Missing prerequisite")
-    except TelepitoError as exc:
+    except InstallerError as exc:
         ctx.log.error(str(exc))
         ctx.ui.message(str(exc), title="Error")

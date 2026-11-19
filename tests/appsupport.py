@@ -36,7 +36,7 @@ class AppTestCase(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.state_dir = self.root / "telepito"
+        self.state_dir = self.root / "installer"
         self.state_dir.mkdir()
         self.target = self.root / "investment"
         self.target.mkdir()

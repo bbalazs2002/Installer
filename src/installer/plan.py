@@ -315,7 +315,7 @@ _KIND_TITLES = {
 
 
 def format_plan(plan: Plan) -> str:
-    """The plan as plain text (for the confirmation screen and ``telepito plan``)."""
+    """The plan as plain text (for the confirmation screen and ``installer plan``)."""
     lines = [f"Operation: {_KIND_TITLES[plan.kind]}"]
     if plan.installed_version:
         lines.append(f"Installed version: {plan.installed_version}")

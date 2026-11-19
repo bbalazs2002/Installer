@@ -9,7 +9,7 @@ from .app import Context
 from .envconfig import EnvConfigError, check_value
 from .envfile import read_env
 from .envmanage import describe_env, edit_value, rotate_secret
-from .errors import TelepitoError
+from .errors import InstallerError
 from .manifest import Manifest
 from .state import InstallRecord
 from .ui.base import Item, UiBack, ask_validated
@@ -172,7 +172,7 @@ def vault_menu(ctx: Context) -> None:
 def _unlocked(ctx: Context) -> Vault:
     vault = ctx.vault()
     if vault is None:
-        raise TelepitoError("This operation is not possible without a vault.")
+        raise InstallerError("This operation is not possible without a vault.")
     return vault
 
 
@@ -190,7 +190,7 @@ def _vault_list(ctx: Context) -> None:
 
 def _vault_export(ctx: Context) -> None:
     vault = _unlocked(ctx)
-    default = str(Path.home() / "telepito-vault-export.enc")
+    default = str(Path.home() / "installer-vault-export.enc")
     text = ctx.ui.text(
         "Where should I export it? (it will be an encrypted file)", title="Export", default=default
     )
@@ -208,7 +208,7 @@ def _vault_import(ctx: Context) -> None:
     try:
         other = Vault.open(source, password)
     except VaultError as exc:
-        raise TelepitoError(str(exc)) from exc
+        raise InstallerError(str(exc)) from exc
     conflicts = vault.merge_from(other)
     if conflicts:
         listing = "\n".join(f"  {inst}/{name}" for inst, name in conflicts)

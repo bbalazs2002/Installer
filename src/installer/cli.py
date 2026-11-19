@@ -25,17 +25,19 @@ from .errors import (
     EXIT_MISSING_PREREQUISITE,
     EXIT_OK,
     EXIT_USER_ABORT,
+    InstallerError,
     PrerequisiteError,
-    TelepitoError,
     UserAbort,
 )
 from .flows_misc import pending_updates
 from .github import GitHub
 from .github_http import HttpGitHub
 from .health import HealthChecker, http_health
+from .identity import LEGACY_PYZ_NAME, program_name
 from .logging_ import Logger, Redactor
 from .paths import Paths, default_paths
 from .plan import PlanRequest, build_plan, format_plan
+from .selfupdate import migrate_legacy_name, running_pyz
 from .state import inspect_target, load_install_info
 from .status import collect_status
 from .tokenstore import TokenStore
@@ -47,13 +49,16 @@ from .versions import Version, VersionError
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # The name comes from the file being run, see installer.identity: installers of the 0.1.x
+    # generation test a downloaded update by requiring "telepito <version>" from it.
+    name = program_name(running_pyz())
     parser = argparse.ArgumentParser(
-        prog="telepito",
+        prog=name,
         description="Installer for GitHub releases (Docker). Without arguments the menu starts.",
     )
-    parser.add_argument("--version", action="version", version=f"telepito {__version__}")
+    parser.add_argument("--version", action="version", version=f"{name} {__version__}")
     parser.add_argument(
-        "--state-dir", help="the installer's directory (default: the directory of telepito.pyz)"
+        "--state-dir", help="the installer's directory (default: the directory of installer.pyz)"
     )
     parser.add_argument("--token-file", help="the GitHub token file")
     sub = parser.add_subparsers(dest="command", metavar="command")
@@ -124,6 +129,7 @@ def main(
         )
         if interactive:
             _require_state_dir(paths)
+            _migrate_legacy_pyz(ctx)
             return run_menu(ctx, updates_hint=lambda: pending_updates(ctx))
         if args.command == "status":
             return _status(ctx, as_json=args.json)
@@ -139,13 +145,28 @@ def main(
     except PrerequisiteError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_MISSING_PREREQUISITE
-    except TelepitoError as exc:
+    except InstallerError as exc:
         log.error(str(exc))
         return _fail(str(exc))
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return EXIT_USER_ABORT
     return EXIT_ERROR
+
+
+def _migrate_legacy_pyz(ctx: Context) -> None:
+    """A copy still called ``telepito.pyz`` renames itself to ``installer.pyz`` (once)."""
+    pyz = running_pyz()
+    if pyz is None or pyz.name != LEGACY_PYZ_NAME:
+        return
+    moved = migrate_legacy_name(pyz, ctx.log)
+    if moved != pyz:
+        ctx.pyz_path = running_pyz() or moved
+        ctx.ui.message(
+            f"The installer file was renamed to {moved.name}.\n"
+            f"{pyz.name} is now a link to it, so existing shortcuts keep working.",
+            title="Renamed",
+        )
 
 
 def _terminal_ui() -> Ui:

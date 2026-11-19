@@ -48,5 +48,8 @@ jobs:
 
       - name: Build the zipapp and smoke-test it
         run: |
-          python scripts/build_pyz.py dist/telepito.pyz
-          python dist/telepito.pyz --version
+          python scripts/build_pyz.py dist/installer.pyz
+          python dist/installer.pyz --version
+          # the same archive under the 0.1.x name must still answer as "telepito <version>"
+          mkdir compat && cp dist/installer.pyz compat/telepito.pyz
+          python compat/telepito.pyz --version | grep -E '^telepito [0-9]'

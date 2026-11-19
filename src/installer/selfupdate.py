@@ -1,10 +1,14 @@
 """Updating the installer itself (specification 5.8, 12).
 
-The installer ships as one file, ``telepito.pyz``, attached to a release of its own repository
+The installer ships as one file, ``installer.pyz``, attached to a release of its own repository
 together with a ``SHA256SUMS``. An update downloads both, verifies the checksum, *runs* the new
 file once (``--version``) to make sure it works on this Python and is the version it claims to
-be, keeps the old file as ``telepito.pyz.previous``, and only then replaces the running file
+be, keeps the old file as ``installer.pyz.previous``, and only then replaces the running file
 atomically. A failed step at any point leaves the installed file untouched.
+
+Releases also carry the same archive as ``telepito.pyz`` for installers of the 0.1.x generation
+(see :mod:`installer.identity`); a copy running from a file with that name renames itself to
+``installer.pyz`` on first start (:func:`migrate_legacy_name`).
 """
 
 from __future__ import annotations
@@ -19,22 +23,23 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import __version__
-from .errors import TelepitoError
+from .errors import InstallerError
 from .fsutil import atomic_write_bytes
 from .github import GitHub, Release
+from .identity import LEGACY_PYZ_NAME, PROGRAM, PYZ_NAME
 from .installer import ReleaseError, parse_sums, verify_file
 from .logging_ import Logger
 from .versions import Version
 
 SELF_REPO = "bbalazs2002/Installer"
-PYZ_ASSET = "telepito.pyz"
+PYZ_ASSET = PYZ_NAME
 SUMS_ASSET = "SHA256SUMS"
 PREVIOUS_SUFFIX = ".previous"
 DEFAULT_MODE = 0o750
 CHECK_TIMEOUT = 30
 
 
-class SelfUpdateError(TelepitoError):
+class SelfUpdateError(InstallerError):
     """The update cannot be applied; the installed file is unchanged."""
 
 
@@ -46,7 +51,7 @@ class SelfUpdateResult:
 
 
 def running_pyz() -> Path | None:
-    """The ``telepito.pyz`` this process runs from, or ``None`` (e.g. a source checkout)."""
+    """The ``.pyz`` file this process runs from, or ``None`` (e.g. a source checkout)."""
     candidate = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
     if candidate is None:
         return None
@@ -75,7 +80,7 @@ def apply_update(github: GitHub, release: Release, pyz_path: Path, log: Logger) 
         raise SelfUpdateError(f"The tag {release.tag} is not a valid version.")
     if pyz_path.suffix != ".pyz" or not pyz_path.is_file():
         raise SelfUpdateError(
-            "Only an installer running from telepito.pyz can be updated (this one is not)."
+            "Only an installer running from installer.pyz can be updated (this one is not)."
         )
     pyz_asset, sums_asset = release.asset(PYZ_ASSET), release.asset(SUMS_ASSET)
     if pyz_asset is None or sums_asset is None:
@@ -84,7 +89,7 @@ def apply_update(github: GitHub, release: Release, pyz_path: Path, log: Logger) 
     directory = pyz_path.parent
     try:
         mode = stat.S_IMODE(pyz_path.stat().st_mode) or DEFAULT_MODE
-        scratch = Path(tempfile.mkdtemp(prefix=".telepito-update-", dir=directory))
+        scratch = Path(tempfile.mkdtemp(prefix=".installer-update-", dir=directory))
     except OSError as exc:
         raise SelfUpdateError(
             f"Cannot write to {directory} ({exc}); the update is not possible."
@@ -133,10 +138,44 @@ def _smoke_test(candidate: Path, expected: Version) -> None:
         raise SelfUpdateError(
             "The new installer does not run on this Python" + (f": {detail[0]}" if detail else ".")
         )
-    if output != f"telepito {expected}":
+    if output != f"{PROGRAM} {expected}":
         raise SelfUpdateError(
             f"The new installer reports a different version ({output!r}) than the release ({expected})."
         )
+
+
+def migrate_legacy_name(pyz: Path, log: Logger) -> Path:
+    """Rename a file still called ``telepito.pyz`` to ``installer.pyz``.
+
+    ``telepito.pyz`` is left behind as a symlink to the new name, so shortcuts that point at the
+    old name keep working. Nothing is overwritten and any failure leaves everything as it was.
+    Returns the (possibly new) path of the running file.
+    """
+    if pyz.name != LEGACY_PYZ_NAME:
+        return pyz
+    target = pyz.with_name(PYZ_NAME)
+    if target.exists() or target.is_symlink():
+        return pyz
+    try:
+        os.replace(pyz, target)
+    except OSError as exc:
+        log.warning(f"Renaming {pyz.name} to {PYZ_NAME} failed: {exc}")
+        return pyz
+    try:
+        os.symlink(PYZ_NAME, pyz)  # relative link, valid wherever the directory is moved to
+    except OSError as exc:
+        os.replace(target, pyz)  # without the link the old name would vanish: undo the rename
+        log.warning(f"Creating the {pyz.name} link failed, the rename was undone: {exc}")
+        return pyz
+    old_previous = pyz.with_name(pyz.name + PREVIOUS_SUFFIX)
+    new_previous = target.with_name(target.name + PREVIOUS_SUFFIX)
+    if old_previous.is_file() and not new_previous.exists():
+        try:
+            os.replace(old_previous, new_previous)
+        except OSError:
+            pass  # cosmetic only
+    log.info(f"Renamed {pyz.name} to {PYZ_NAME} ({pyz.name} is now a link to it).")
+    return target
 
 
 __all__ = [
@@ -145,5 +184,6 @@ __all__ = [
     "SelfUpdateResult",
     "apply_update",
     "find_update",
+    "migrate_legacy_name",
     "running_pyz",
 ]

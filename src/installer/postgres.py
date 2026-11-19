@@ -23,7 +23,7 @@ from urllib.parse import quote
 from .backup import PRE_RESTORE, backup_filename, create_private_file
 from .docker import ContainerInfo, Docker, DockerError, ExecResult
 from .envfile import generate_secret, update_env_file
-from .errors import TelepitoError, UserAbort
+from .errors import InstallerError, UserAbort
 from .installer import DatabaseOps, DatabaseSetup
 from .logging_ import Logger
 from .manifest import DatabaseSpec, Manifest
@@ -49,7 +49,7 @@ _CONTAINER_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 _PLACEHOLDER_RE = re.compile(r"\{(user|password|host|port|database)\}")
 
 
-class PostgresError(TelepitoError):
+class PostgresError(InstallerError):
     """A database operation failed. The message is user-facing and already masked."""
 
 
@@ -292,7 +292,7 @@ class PsqlClient:
         The password reaches the container only through stdin, into a private ``.pgpass``
         file that is deleted again right away.
         """
-        path = f"/tmp/.telepito-pgpass-{secrets.token_hex(6)}"
+        path = f"/tmp/.installer-pgpass-{secrets.token_hex(6)}"
         fields = (host, str(PG_PORT), database, user, password)
         line = ":".join(f.replace("\\", "\\\\").replace(":", "\\:") for f in fields) + "\n"
         try:

@@ -8,7 +8,7 @@ from typing import Any
 from installer.docker import DockerError
 from installer.envconfig import DefaultEnvConfigurator
 from installer.envfile import read_env
-from installer.errors import TelepitoError, UserAbort
+from installer.errors import InstallerError, UserAbort
 from installer.health import HealthResponse
 from installer.installer import (
     DatabaseOps,
@@ -84,7 +84,7 @@ class InstallerTestCase(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.state_dir = self.root / "telepito"
+        self.state_dir = self.root / "installer"
         self.target = self.root / "investment"
         self.target.mkdir()
         self.meta_dir = self.root / "meta"
@@ -328,14 +328,14 @@ class NewInstallTests(InstallerTestCase):
         _, release = self.publish("0.1.0")
         job = self.make_job(release)
         self.target.rmdir()
-        with self.assertRaises(TelepitoError) as ctx:
+        with self.assertRaises(InstallerError) as ctx:
             self.installer.install(job)
         self.assertIn("sudo", str(ctx.exception))
 
     def test_blocked_plan_is_refused(self) -> None:
         (self.target / "stranger.txt").write_text("x", encoding="utf-8")
         _, release = self.publish("0.1.0")
-        with self.assertRaises(TelepitoError):
+        with self.assertRaises(InstallerError):
             self.installer.install(self.make_job(release))
 
     def test_no_database_application(self) -> None:
@@ -610,12 +610,12 @@ class RollbackToTests(InstallerTestCase):
 
     def test_missing_image_is_reported(self) -> None:
         self.docker.images.discard("investment:0.1.0")
-        with self.assertRaises(TelepitoError) as ctx:
+        with self.assertRaises(InstallerError) as ctx:
             self.installer.rollback_to(self.target, "0.1.0")
         self.assertIn("Download the release again", str(ctx.exception))
 
     def test_unknown_version(self) -> None:
-        with self.assertRaises(TelepitoError):
+        with self.assertRaises(InstallerError):
             self.installer.rollback_to(self.target, "9.9.9")
 
     def test_rollback_blocked_when_database_is_ahead(self) -> None:
@@ -626,7 +626,7 @@ class RollbackToTests(InstallerTestCase):
         from installer.state import save_install_info
 
         save_install_info(self.target, replace(info, migrations=("m1", "m_extra")))
-        with self.assertRaises(TelepitoError) as ctx:
+        with self.assertRaises(InstallerError) as ctx:
             self.installer.rollback_to(self.target, "0.1.0")
         self.assertIn("cannot be carried out", str(ctx.exception))
 
@@ -654,7 +654,7 @@ class RestartTests(InstallerTestCase):
         self.assertIn("fake compose_up", self.installer.restart(self.target) or "")
 
     def test_restart_without_installation(self) -> None:
-        with self.assertRaises(TelepitoError):
+        with self.assertRaises(InstallerError):
             self.installer.restart(self.target)
 
 

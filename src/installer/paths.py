@@ -1,7 +1,7 @@
 """Where the installer keeps its own files.
 
 The state directory is *not* a fixed location: by default it is the directory that holds the
-running ``telepito.pyz``, so wherever the installer is put, its files (``installs.json``,
+running ``installer.pyz``, so wherever the installer is put, its files (``installs.json``,
 ``repos.json``, ``vault/``, ``logs/``, ``tmp/``, ``.lock``) live right next to it.
 """
 
@@ -14,10 +14,13 @@ from pathlib import Path
 from .errors import PrerequisiteError
 from .selfupdate import running_pyz
 
-STATE_DIR_ENV = "TELEPITO_STATE_DIR"
-TOKEN_FILE_ENV = "TELEPITO_TOKEN_FILE"
+STATE_DIR_ENV = "INSTALLER_STATE_DIR"
+TOKEN_FILE_ENV = "INSTALLER_TOKEN_FILE"
+# The names used before 0.2.0; still honoured when the new ones are not set.
+LEGACY_STATE_DIR_ENV = "TELEPITO_STATE_DIR"
+LEGACY_TOKEN_FILE_ENV = "TELEPITO_TOKEN_FILE"
 CONFIG_DIR_NAME = "installer"  # ~/.config/installer/token
-LEGACY_CONFIG_DIR_NAME = "telepito"  # where 0.1.0 kept the token; still read if present
+LEGACY_CONFIG_DIR_NAME = "telepito"  # where 0.1.x kept the token; still read if present
 
 
 @dataclass(frozen=True)
@@ -58,20 +61,22 @@ def default_paths(
 ) -> Paths:
     """Resolve the locations.
 
-    State directory: ``--state-dir``, else ``$TELEPITO_STATE_DIR``, else the directory of the
-    running ``telepito.pyz`` (symlinks resolved). Outside a zipapp (a source checkout) there is
+    State directory: ``--state-dir``, else ``$INSTALLER_STATE_DIR``, else the directory of the
+    running ``installer.pyz`` (symlinks resolved). Outside a zipapp (a source checkout) there is
     no sensible default, so one of the first two must be given.
     """
-    state: str | os.PathLike[str] | None = state_dir or os.environ.get(STATE_DIR_ENV)
+    state: str | os.PathLike[str] | None = (
+        state_dir or os.environ.get(STATE_DIR_ENV) or os.environ.get(LEGACY_STATE_DIR_ENV)
+    )
     if not state:
         pyz = running_pyz()
         if pyz is None:
             raise PrerequisiteError(
-                "The installer's directory is unknown: this is not running from telepito.pyz. "
+                "The installer's directory is unknown: this is not running from installer.pyz. "
                 f"Pass --state-dir or set {STATE_DIR_ENV}."
             )
         state = pyz.parent
-    explicit = token_file or os.environ.get(TOKEN_FILE_ENV)
+    explicit = token_file or os.environ.get(TOKEN_FILE_ENV) or os.environ.get(LEGACY_TOKEN_FILE_ENV)
     if explicit:
         return Paths(Path(state), Path(explicit))
     config = Path.home() / ".config"

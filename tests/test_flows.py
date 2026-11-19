@@ -3,7 +3,7 @@ import shutil
 import unittest
 
 from installer.app import run_action, run_menu
-from installer.errors import TelepitoError
+from installer.errors import InstallerError
 from installer.flows_db import database_menu
 from installer.flows_env import env_screen, rotate_screen, vault_menu
 from installer.flows_install import OTHER_REPO, TOGGLE_PRERELEASES, install_flow
@@ -160,7 +160,7 @@ class UpdateFlowTests(AppTestCase):
 
     def test_github_errors_are_shown_per_application(self) -> None:
         def broken(repo: str) -> None:
-            raise TelepitoError("GitHub is unavailable")
+            raise InstallerError("GitHub is unavailable")
 
         self.github.latest_stable = broken  # type: ignore[method-assign]
         updates_screen(self.ctx)
@@ -196,7 +196,7 @@ class MenuTests(AppTestCase):
 
     def test_expected_errors_become_messages_not_crashes(self) -> None:
         def boom(ctx: object) -> None:
-            raise TelepitoError("something went wrong")
+            raise InstallerError("something went wrong")
 
         run_action(self.ctx, boom)
         self.assertIn("something went wrong", self.messages())
@@ -455,7 +455,7 @@ class SettingsFlowTests(AppTestCase):
         old = self.tokens.load()
 
         def deny(repo: str) -> None:
-            raise TelepitoError("No access to the repository")
+            raise InstallerError("No access to the repository")
 
         self.github.check_access = deny  # type: ignore[method-assign]
         self.ui.push("token", "github_pat_WRONGTOKEN12345", REPO, UiBack)

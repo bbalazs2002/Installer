@@ -8,16 +8,16 @@ EXIT_USER_ABORT = 2
 EXIT_MISSING_PREREQUISITE = 3
 
 
-class TelepitoError(Exception):
+class InstallerError(Exception):
     """Base class for all expected, user-presentable errors.
 
     The message is shown to the user as-is (in Hungarian).
     """
 
 
-class UserAbort(TelepitoError):
+class UserAbort(InstallerError):
     """The user declined or cancelled an operation (exit code 2)."""
 
 
-class PrerequisiteError(TelepitoError):
+class PrerequisiteError(InstallerError):
     """A required tool or condition is missing (exit code 3)."""

@@ -294,7 +294,7 @@ class PsqlClientTests(unittest.TestCase):
         for record in (write, login, cleanup):
             self.assertNotIn("word1", " ".join(record.args))
         self.assertIn("-w", login.args)  # never prompt
-        self.assertTrue(login.args[1].startswith("PGPASSFILE=/tmp/.telepito-pgpass-"))
+        self.assertTrue(login.args[1].startswith("PGPASSFILE=/tmp/.installer-pgpass-"))
         self.assertEqual(cleanup.args[:2], ("rm", "-f"))
 
     def test_failed_login_names_the_target_and_still_cleans_up(self) -> None:

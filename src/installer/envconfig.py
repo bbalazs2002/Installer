@@ -13,12 +13,12 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
 from .envfile import generate_secret, validate_pair
-from .errors import TelepitoError
+from .errors import InstallerError
 from .logging_ import Redactor
 from .manifest import EnvVar, Manifest
 
 
-class EnvConfigError(TelepitoError):
+class EnvConfigError(InstallerError):
     """A variable has no valid value. The message is user-facing."""
 
 
@@ -57,7 +57,7 @@ def check_value(item: EnvVar, value: str) -> str | None:
         return f"The value of {item.name} does not match the required format."
     try:
         validate_pair(item.name, value)
-    except TelepitoError as exc:
+    except InstallerError as exc:
         return str(exc)
     return None
 

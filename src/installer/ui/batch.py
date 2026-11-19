@@ -10,12 +10,12 @@ import contextlib
 import sys
 from collections.abc import Iterator, Sequence
 
-from ..errors import TelepitoError
+from ..errors import InstallerError
 from .base import Item, ProgressHandle, Ui, null_progress
 
 
-def _no_input() -> TelepitoError:
-    return TelepitoError(
+def _no_input() -> InstallerError:
+    return InstallerError(
         "This operation needs the interactive interface (start without arguments)."
     )
 

@@ -41,7 +41,7 @@ from .github import (
 from .validators import is_repo
 
 API_BASE = "https://api.github.com"
-USER_AGENT = "telepito"
+USER_AGENT = "installer"
 API_VERSION = "2022-11-28"
 
 CONNECT_TIMEOUT = 10.0

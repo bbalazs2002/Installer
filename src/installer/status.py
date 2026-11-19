@@ -1,4 +1,4 @@
-"""The state of the installed applications (menu 6, ``telepito status``).
+"""The state of the installed applications (menu 6, ``installer status``).
 
 Reads ``installs.json`` and asks Docker and the health endpoint; it never writes anything and
 never touches a secret.

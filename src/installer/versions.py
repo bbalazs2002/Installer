@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .errors import TelepitoError
+from .errors import InstallerError
 
 _IDENT = r"[0-9A-Za-z-]+"
 _SEMVER_RE = re.compile(
@@ -16,7 +16,7 @@ _SEMVER_RE = re.compile(
 _NUMERIC_RE = re.compile(r"^[0-9]+$")
 
 
-class VersionError(TelepitoError, ValueError):
+class VersionError(InstallerError, ValueError):
     """Raised for text that is not a valid SemVer version."""
 
 

@@ -57,7 +57,7 @@ class VaultTests(unittest.TestCase):
         blob = self.path.read_bytes()
         self.assertNotIn(b"s3cret-value-1", blob)
         self.assertNotIn(b"investment", blob)
-        self.assertTrue(blob.startswith(b"TELEPITO-VAULT 1 scrypt "))
+        self.assertTrue(blob.startswith(b"INSTALLER-VAULT 1 scrypt "))
 
     @unittest.skipIf(sys.platform == "win32", "POSIX file modes")
     def test_file_mode_is_600(self) -> None:
@@ -121,7 +121,7 @@ class VaultTests(unittest.TestCase):
 
     def test_unsupported_format_version(self) -> None:
         self.make()
-        blob = self.path.read_bytes().replace(b"TELEPITO-VAULT 1 ", b"TELEPITO-VAULT 2 ", 1)
+        blob = self.path.read_bytes().replace(b"INSTALLER-VAULT 1 ", b"INSTALLER-VAULT 2 ", 1)
         self.path.write_bytes(blob)
         with self.assertRaises(VaultError) as ctx:
             Vault.open(self.path, PASSWORD)

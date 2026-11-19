@@ -2,7 +2,7 @@
 
 For each of ``postgres:17-alpine`` and ``postgres:15-alpine`` a private container on a private
 network is started and removed again; containers the machine already runs are never touched.
-Skipped when Docker is unavailable or ``TELEPITO_SKIP_DOCKER_TESTS`` is set. The first run may
+Skipped when Docker is unavailable or ``INSTALLER_SKIP_DOCKER_TESTS`` is set. The first run may
 need to pull the images.
 """
 
@@ -44,7 +44,7 @@ def _run(*args: str, timeout: float = 300) -> subprocess.CompletedProcess[str]:
 
 
 def docker_usable() -> bool:
-    if os.environ.get("TELEPITO_SKIP_DOCKER_TESTS") or shutil.which("docker") is None:
+    if os.environ.get("INSTALLER_SKIP_DOCKER_TESTS") or shutil.which("docker") is None:
         return False
     try:
         return _run("info", "--format", "{{.ServerVersion}}", timeout=30).returncode == 0

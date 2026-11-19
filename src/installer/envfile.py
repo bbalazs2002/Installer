@@ -12,7 +12,7 @@ import secrets
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from .errors import TelepitoError
+from .errors import InstallerError
 from .fsutil import atomic_write_text
 from .validators import is_env_name
 
@@ -20,7 +20,7 @@ SECRET_FILE_MODE = 0o600
 _FORBIDDEN = ("'", "\n", "\r", "\x00")
 
 
-class EnvFileError(TelepitoError):
+class EnvFileError(InstallerError):
     """A key or value cannot be stored safely."""
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from .app import Context, run_action
 from .backup import list_backups, offer_retention
 from .docker import DockerError
-from .errors import TelepitoError
+from .errors import InstallerError
 from .state import save_install_info
 from .ui.base import Item, UiBack
 
@@ -39,7 +39,7 @@ def _context(ctx: Context, path: str):  # type: ignore[no-untyped-def]
     record = InstallRecord("", "", path, "", "")
     info, manifest, layout = ctx.load_install(record)
     if info.database is None:
-        raise TelepitoError("This installation has no database.")
+        raise InstallerError("This installation has no database.")
     return info, manifest, layout
 
 
@@ -81,7 +81,7 @@ def _restore(ctx: Context, path: str, name: str) -> None:
         try:
             ctx.docker.compose_stop(manifest.project_name, compose_file, layout.compose_env)
         except DockerError as exc:
-            raise TelepitoError(f"Stopping the application failed: {exc}") from exc
+            raise InstallerError(f"Stopping the application failed: {exc}") from exc
 
     ctx.database_ops().restore(info.database, chosen.path, prepare=stop_application)
     ctx.log.info(f"{name}: database restored: {chosen.path.name}")

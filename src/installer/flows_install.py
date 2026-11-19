@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .app import Context
 from .backup import backup_refs
-from .errors import TelepitoError, UserAbort
+from .errors import InstallerError, UserAbort
 from .github import GitHub, Release
 from .installer import InstallJob, InstallResult
 from .manifest import Manifest
@@ -120,7 +120,7 @@ def _port_error(value: str) -> str | None:
 def _version(release: Release) -> Version:
     version = release.version
     if version is None:
-        raise TelepitoError(f"The tag {release.tag} is not a valid version (SemVer).")
+        raise InstallerError(f"The tag {release.tag} is not a valid version (SemVer).")
     return version
 
 
@@ -144,14 +144,14 @@ def _find_release(github: GitHub, repo: str, tag: str) -> Release:
     for release in github.list_releases(repo):
         if release.tag == tag:
             return release
-    raise TelepitoError(f"Release {tag} was not found in {repo}.")
+    raise InstallerError(f"Release {tag} was not found in {repo}.")
 
 
 def _choose_release(ctx: Context, github: GitHub, repo: str) -> Release:
     ui = ctx.ui
     releases = [r for r in github.list_releases(repo) if r.version is not None]
     if not releases:
-        raise TelepitoError(f"There is no installable (SemVer) release in {repo}.")
+        raise InstallerError(f"There is no installable (SemVer) release in {repo}.")
     installed = {r.version for r in ctx.registry() if r.repo == repo}
     show_prereleases = False
     default: str | None = None

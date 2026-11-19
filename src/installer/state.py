@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .errors import TelepitoError
+from .errors import InstallerError
 from .fsutil import atomic_write_text
 from .validators import is_app_name, is_repo
 
@@ -22,7 +22,7 @@ INSTALL_INFO_NAME = ".install.json"
 STATE_FILE_MODE = 0o640
 
 
-class StateError(TelepitoError):
+class StateError(InstallerError):
     """A state file is unreadable or has an unexpected shape. Never guessed around."""
 
 

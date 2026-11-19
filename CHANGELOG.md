@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+- **Everything is called `installer` now**: the file (`installer.pyz`), the command, the
+  `--version` output (`installer <version>`), the environment variables (`INSTALLER_STATE_DIR`,
+  `INSTALLER_TOKEN_FILE`; the `TELEPITO_*` names still work), the vault file header and the
+  internal names. The self-update downloads the asset `installer.pyz`.
+- **Upgrading from 0.1.x keeps working.** Each release also carries the identical archive as
+  `telepito.pyz`, which a 0.1.x updater needs; run from a file with that name the program reports
+  itself as `telepito <version>`, as those updaters require. On its first interactive start such
+  a file renames itself to `installer.pyz` and leaves a `telepito.pyz` symlink behind.
+- Vaults written by 0.1.x (header `TELEPITO-VAULT`) still open and are rewritten with the new
+  header on the next save.
+
 ## 0.1.1
 
 - The whole program is in English: the interface, messages, documentation and README.

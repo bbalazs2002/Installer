@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build ``telepito.pyz``, the single-file zipapp that runs on the server.
+"""Build ``installer.pyz``, the single-file zipapp that runs on the server.
 
-Usage: ``python scripts/build_pyz.py [output]`` (default ``dist/telepito.pyz``).
+Usage: ``python scripts/build_pyz.py [output]`` (default ``dist/installer.pyz``).
 
 The archive holds only the ``installer`` package (no tests, no caches) and a ``__main__.py``
 that passes ``main()``'s return value to ``sys.exit`` (``zipapp``'s own ``-m`` template would
@@ -42,7 +42,7 @@ def build(output: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    target = Path(args[0]) if args else ROOT / "dist" / "telepito.pyz"
+    target = Path(args[0]) if args else ROOT / "dist" / "installer.pyz"
     print(build(target))
     return 0
 

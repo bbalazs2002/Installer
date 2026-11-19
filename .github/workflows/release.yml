@@ -1,7 +1,13 @@
 name: Release
 
 # A tag like v0.2.0 runs the whole CI first. Only if it is green is a release created, with
-# exactly two assets: telepito.pyz and its SHA256SUMS (what the self-update downloads).
+# three assets:
+#   installer.pyz  the installer (what the self-update of this and later versions downloads)
+#   telepito.pyz   the same archive under the name that installers of the 0.1.x generation look
+#                  for; the program reports the name of the file it runs from, so this copy
+#                  answers `--version` as "telepito <version>", exactly as those installers
+#                  require. Drop it once no 0.1.x installer is left.
+#   SHA256SUMS     the sums of both files
 
 on:
   push:
@@ -39,13 +45,16 @@ jobs:
 
       - name: Build
         run: |
-          python scripts/build_pyz.py dist/telepito.pyz
+          python scripts/build_pyz.py dist/installer.pyz
+          cp dist/installer.pyz dist/telepito.pyz
           cd dist
-          sha256sum telepito.pyz > SHA256SUMS
+          sha256sum installer.pyz telepito.pyz > SHA256SUMS
           sha256sum --check SHA256SUMS
 
-      - name: Smoke test
+      - name: Smoke test (both names)
         run: |
+          out=$(python dist/installer.pyz --version)
+          test "$out" = "installer $VERSION"
           out=$(python dist/telepito.pyz --version)
           test "$out" = "telepito $VERSION"
 
@@ -56,5 +65,5 @@ jobs:
         run: |
           flags=""
           case "$TAG" in *-*) flags="--prerelease" ;; esac
-          gh release create "$TAG" dist/telepito.pyz dist/SHA256SUMS \
+          gh release create "$TAG" dist/installer.pyz dist/telepito.pyz dist/SHA256SUMS \
             --title "$TAG" --generate-notes --verify-tag $flags

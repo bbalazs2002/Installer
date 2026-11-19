@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .errors import TelepitoError
+from .errors import InstallerError
 from .fsutil import atomic_write_text
 
 TOKEN_MODE = 0o600
@@ -39,14 +39,14 @@ class TokenStore:
             except FileNotFoundError:
                 continue
             except (OSError, UnicodeDecodeError) as exc:
-                raise TelepitoError(f"The token file cannot be read: {exc}") from exc
+                raise InstallerError(f"The token file cannot be read: {exc}") from exc
             return token or None
         return None
 
     def save(self, token: str) -> None:
         token = token.strip()
         if not token or any(ch.isspace() for ch in token):
-            raise TelepitoError("Invalid token.")
+            raise InstallerError("Invalid token.")
         self._path.parent.mkdir(parents=True, exist_ok=True, mode=_DIR_MODE)
         atomic_write_text(self._path, token + "\n", TOKEN_MODE)
 

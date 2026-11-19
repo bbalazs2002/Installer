@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from types import TracebackType
 
-from .errors import TelepitoError
+from .errors import InstallerError
 
 if sys.platform == "win32":
     import msvcrt
@@ -15,7 +15,7 @@ else:
     import fcntl
 
 
-class LockBusy(TelepitoError):
+class LockBusy(InstallerError):
     """Another installer instance holds the lock."""
 
 

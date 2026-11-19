@@ -13,11 +13,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .errors import TelepitoError
+from .errors import InstallerError
 from .versions import Version
 
 
-class GitHubError(TelepitoError):
+class GitHubError(InstallerError):
     """Base class for GitHub failures. Messages are user-facing and never contain the token."""
 
 

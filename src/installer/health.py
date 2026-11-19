@@ -24,7 +24,7 @@ HealthChecker = Callable[[str], HealthResponse]
 
 def http_health(url: str, timeout: float = 5.0) -> HealthResponse:
     """Plain ``GET`` with a short timeout. HTTP error statuses are answers, not exceptions."""
-    request = urllib.request.Request(url, headers={"User-Agent": "telepito"})
+    request = urllib.request.Request(url, headers={"User-Agent": "installer"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             return HealthResponse(response.status, response.read(65536))

@@ -1,4 +1,4 @@
-"""Checking installed applications for newer releases (menu 2, ``telepito updates``)."""
+"""Checking installed applications for newer releases (menu 2, ``installer updates``)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from .errors import TelepitoError
+from .errors import InstallerError
 from .github import GitHub, Release
 from .state import InstallRecord
 from .versions import Version
@@ -32,7 +32,7 @@ def find_updates(github: GitHub, records: Sequence[InstallRecord]) -> list[Updat
     for record in records:
         try:
             result.append(UpdateInfo(record, github.latest_stable(record.repo)))
-        except TelepitoError as exc:
+        except InstallerError as exc:
             result.append(UpdateInfo(record, error=str(exc)))
     return result
 

@@ -7,7 +7,13 @@ from unittest import mock
 
 from installer.cli import main
 from installer.errors import PrerequisiteError
-from installer.paths import STATE_DIR_ENV, TOKEN_FILE_ENV, default_paths
+from installer.paths import (
+    LEGACY_STATE_DIR_ENV,
+    LEGACY_TOKEN_FILE_ENV,
+    STATE_DIR_ENV,
+    TOKEN_FILE_ENV,
+    default_paths,
+)
 
 
 def pyz(path: str) -> mock._patch:  # type: ignore[type-arg]
@@ -21,6 +27,8 @@ class StateDirTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         os.environ.pop(STATE_DIR_ENV, None)
         os.environ.pop(TOKEN_FILE_ENV, None)
+        os.environ.pop(LEGACY_STATE_DIR_ENV, None)
+        os.environ.pop(LEGACY_TOKEN_FILE_ENV, None)
 
     def test_default_is_the_directory_of_the_running_pyz(self) -> None:
         with pyz("/var/Installer/telepito.pyz"):
@@ -44,6 +52,21 @@ class StateDirTests(unittest.TestCase):
         with pyz("/var/Installer/telepito.pyz"):
             self.assertEqual(default_paths().state_dir, Path("/from/env"))
             self.assertEqual(default_paths("/from/arg").state_dir, Path("/from/arg"))
+
+    def test_the_old_environment_variable_names_still_work_but_lose_to_the_new_ones(self) -> None:
+        os.environ[LEGACY_STATE_DIR_ENV] = "/legacy/state"
+        os.environ[LEGACY_TOKEN_FILE_ENV] = "/legacy/token"
+        with pyz("/var/Installer/installer.pyz"):
+            paths = default_paths()
+            self.assertEqual(
+                (paths.state_dir, paths.token_file), (Path("/legacy/state"), Path("/legacy/token"))
+            )
+            os.environ[STATE_DIR_ENV] = "/new/state"
+            os.environ[TOKEN_FILE_ENV] = "/new/token"
+            paths = default_paths()
+            self.assertEqual(
+                (paths.state_dir, paths.token_file), (Path("/new/state"), Path("/new/token"))
+            )
 
     def test_outside_a_zipapp_a_directory_must_be_given(self) -> None:
         with mock.patch("installer.paths.running_pyz", return_value=None):

@@ -6,9 +6,10 @@ from collections import deque
 from pathlib import Path
 
 from .app import Context
-from .errors import TelepitoError
+from .errors import InstallerError
 from .flows_install import Preset, install_flow
 from .github_http import token_expiry_warning
+from .identity import PROGRAM
 from .state import KnownRepo, save_repos
 from .status import collect_status, format_status
 from .ui.base import Item, UiBack, ask_validated
@@ -29,7 +30,7 @@ def pending_updates(ctx: Context) -> int:
     try:
         records = ctx.registry()
         return sum(1 for u in find_updates(ctx.github(), records) if u.available)
-    except TelepitoError as exc:
+    except InstallerError as exc:
         ctx.log.warning(f"Checking for updates failed: {exc}")
         return 0
 
@@ -106,7 +107,7 @@ def _token_line(ctx: Context) -> str:
         return "GitHub token: set (its expiry cannot be checked, there is no known repository)"
     try:
         status = ctx.github().check_access(repos[0])
-    except TelepitoError as exc:
+    except InstallerError as exc:
         return f"GitHub-token: {exc}"
     if status.expires_at is None:
         return "GitHub token: valid (no expiry date)"
@@ -239,7 +240,7 @@ def selfupdate_screen(ctx: Context) -> None:
     ui = ctx.ui
     if ctx.pyz_path is None:
         ui.message(
-            "This instance is not running from telepito.pyz (development start), "
+            "This instance is not running from installer.pyz (development start), "
             "so it cannot be updated.",
             title="Update the installer",
         )
@@ -248,13 +249,13 @@ def selfupdate_screen(ctx: Context) -> None:
     release = find_update(github, __version__)
     if release is None:
         ui.message(
-            f"The installer is up to date (telepito {__version__}).", title="Update the installer"
+            f"The installer is up to date ({PROGRAM} {__version__}).", title="Update the installer"
         )
         return
     if not ui.confirm(
         f"A new installer is available: {__version__} → {release.version}\n\n"
         f"Source: {SELF_REPO}, release {release.tag}\n"
-        "I will download it, verify the sum, try it out, and replace telepito.pyz "
+        "I will download it, verify the sum, try it out, and replace installer.pyz "
         "(the old file is kept as .previous).",
         title="Update the installer",
         default=True,

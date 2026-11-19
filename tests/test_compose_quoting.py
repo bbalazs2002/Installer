@@ -1,7 +1,7 @@
 """Real ``docker compose config`` check of the env file quoting (specification 6.7).
 
 Marked as a Docker test: skipped when ``docker compose`` is unavailable or when the
-environment variable ``TELEPITO_SKIP_DOCKER_TESTS`` is set. It needs no running daemon.
+environment variable ``INSTALLER_SKIP_DOCKER_TESTS`` is set. It needs no running daemon.
 """
 
 import json
@@ -32,7 +32,7 @@ TRICKY = {
 
 
 def _docker_available() -> bool:
-    if os.environ.get("TELEPITO_SKIP_DOCKER_TESTS") or shutil.which("docker") is None:
+    if os.environ.get("INSTALLER_SKIP_DOCKER_TESTS") or shutil.which("docker") is None:
         return False
     try:
         result = subprocess.run(

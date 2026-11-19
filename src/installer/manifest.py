@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .errors import TelepitoError
+from .errors import InstallerError
 from .validators import (
     is_app_name,
     is_asset_name,
@@ -35,7 +35,7 @@ _DB_KEYS = {
 }  # fmt: skip
 
 
-class ManifestError(TelepitoError):
+class ManifestError(InstallerError):
     """The ``deploy.json`` is invalid or unsupported. The message is user-facing."""
 
 

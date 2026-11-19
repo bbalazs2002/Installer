@@ -29,7 +29,7 @@ from .composediff import review_compose
 from .docker import Docker, DockerError
 from .envconfig import EnvConfigurator
 from .envfile import read_env, update_env_file
-from .errors import TelepitoError, UserAbort
+from .errors import InstallerError, UserAbort
 from .fsutil import atomic_symlink
 from .github import Asset, GitHub, Release
 from .health import HealthChecker, http_health, is_healthy
@@ -69,11 +69,11 @@ _READ_CHUNK = 1024 * 1024
 _FAILURE_LOG_LINES = 80
 
 
-class ReleaseError(TelepitoError):
+class ReleaseError(InstallerError):
     """The release does not meet the contract (missing asset, bad checksum, bad compose)."""
 
 
-class InstallFailed(TelepitoError):
+class InstallFailed(InstallerError):
     """The run failed after changes were made; the message says what state things are in."""
 
 
@@ -391,9 +391,9 @@ class Installer:
     def install(self, job: InstallJob) -> InstallResult:
         """Run a confirmed plan (NEW, UPDATE, SAME or DOWNGRADE)."""
         if not job.plan.can_proceed:
-            raise TelepitoError("The plan has blockers; the operation cannot be carried out.")
+            raise InstallerError("The plan has blockers; the operation cannot be carried out.")
         if not job.target.is_dir():
-            raise TelepitoError(
+            raise InstallerError(
                 f"The target directory ({job.target}) does not exist. Create it with root privileges, e.g.: "
                 f"sudo mkdir -p {job.target} && sudo chown $USER {job.target}"
             )
@@ -518,7 +518,7 @@ class Installer:
         if manifest.database is None:
             return
         if self.d.db is None:
-            raise TelepitoError(
+            raise InstallerError(
                 "The application needs a database, but no database support is set up."
             )
         if run.kind is PlanKind.NEW:
@@ -529,7 +529,7 @@ class Installer:
         assert run.prior is not None
         run.db_info = run.prior.database
         if run.prior.database is None:
-            raise TelepitoError("The installation record is missing the database details.")
+            raise InstallerError("The installation record is missing the database details.")
         self._backup_database(run, run.prior)
 
     def _backup_database(self, run: _Run, prior: InstallInfo) -> None:
@@ -827,13 +827,13 @@ class Installer:
         with FileLock(self._lock_path()):
             info = load_install_info(target)
             if info is None:
-                raise TelepitoError("There is no installation in the target directory.")
+                raise InstallerError("There is no installation in the target directory.")
             layout = Layout(target)
             release_dir = layout.release_dir(info.version)
             try:
                 manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
             except (OSError, ManifestError) as exc:
-                raise TelepitoError(
+                raise InstallerError(
                     f"The installed release's descriptor is unreadable: {exc}"
                 ) from exc
             compose_file = release_dir / manifest.compose_file
@@ -884,21 +884,21 @@ class Installer:
         d = self.d
         info = load_install_info(target)
         if info is None:
-            raise TelepitoError("There is no installation in the target directory.")
+            raise InstallerError("There is no installation in the target directory.")
         if version_text not in info.previous_versions:
-            raise TelepitoError(f"{version_text} is not among the previous versions.")
+            raise InstallerError(f"{version_text} is not among the previous versions.")
         layout = Layout(target)
         release_dir = layout.release_dir(version_text)
         version = Version.parse(version_text)
         try:
             manifest = load_manifest((release_dir / MANIFEST_ASSET).read_bytes())
         except (OSError, ManifestError) as exc:
-            raise TelepitoError(
+            raise InstallerError(
                 f"The directory of release {version_text} is incomplete ({exc}). Download the release again."
             ) from exc
         image_ref = f"{manifest.image_name}:{version.image_tag}"
         if not d.docker.image_exists(image_ref):
-            raise TelepitoError(
+            raise InstallerError(
                 f"The image {image_ref} is no longer in Docker. Download the release again "
                 "through the Install / update menu."
             )
@@ -927,7 +927,7 @@ class Installer:
         )
         d.ui.message(format_plan(plan), title="Roll back", scroll=True)
         if not plan.can_proceed:
-            raise TelepitoError("The rollback cannot be carried out: " + "; ".join(plan.blockers))
+            raise InstallerError("The rollback cannot be carried out: " + "; ".join(plan.blockers))
         self.confirm_plan(plan)
 
         port = info.port or manifest.port_default
@@ -945,7 +945,7 @@ class Installer:
         )
         if manifest.database is not None:
             if d.db is None or info.database is None:
-                raise TelepitoError(
+                raise InstallerError(
                     "A database backup needs database support, which is not set up."
                 )
             self._backup_database(run, info)

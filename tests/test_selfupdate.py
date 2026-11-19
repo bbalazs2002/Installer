@@ -48,10 +48,10 @@ def load_builder():  # type: ignore[no-untyped-def]
 def fake_installer(
     directory: Path, version: str, *, exit_code: int = 0, shown: str | None = None
 ) -> bytes:
-    """A tiny but valid zipapp that behaves like ``telepito --version``."""
+    """A tiny but valid zipapp that behaves like ``installer --version``."""
     app = directory / f"app-{version}-{exit_code}"
     app.mkdir(exist_ok=True)
-    shown_text = shown if shown is not None else f"telepito {version}"
+    shown_text = shown if shown is not None else f"installer {version}"
     (app / "__main__.py").write_text(
         f"import sys\nprint({shown_text!r})\nsys.exit({exit_code})\n", encoding="utf-8"
     )
@@ -65,9 +65,9 @@ class SelfUpdateTestCase(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
-        self.install_dir = self.dir / "telepito"
+        self.install_dir = self.dir / "installer"
         self.install_dir.mkdir()
-        self.pyz = self.install_dir / "telepito.pyz"
+        self.pyz = self.install_dir / "installer.pyz"
         self.pyz.write_bytes(b"OLD-INSTALLER")
         os.chmod(self.pyz, 0o750)
         self.github = MemoryGitHub()
@@ -76,14 +76,14 @@ class SelfUpdateTestCase(unittest.TestCase):
     def publish(self, version: str, *, pyz: bytes | None = None, tamper: bool = False,
                 prerelease: bool = False, omit_sums_entry: bool = False) -> object:  # fmt: skip
         data = pyz if pyz is not None else fake_installer(self.dir, version)
-        sums = f"{hashlib.sha256(data).hexdigest()}  telepito.pyz\n"
+        sums = f"{hashlib.sha256(data).hexdigest()}  installer.pyz\n"
         if omit_sums_entry:
             sums = f"{'0' * 64}  something-else\n"
         if tamper:
             data += b"X"
         return self.github.add_raw(
             f"v{version}",
-            {"telepito.pyz": data, "SHA256SUMS": sums.encode()},
+            {"installer.pyz": data, "SHA256SUMS": sums.encode()},
             prerelease=prerelease,
         )
 
@@ -118,17 +118,17 @@ class ApplyUpdateTests(SelfUpdateTestCase):
         self.assertEqual((result.old_version, result.new_version), (__version__, "9.0.0"))
         self.assertNotEqual(self.pyz.read_bytes(), b"OLD-INSTALLER")
         self.assertEqual(result.previous_file.read_bytes(), b"OLD-INSTALLER")
-        self.assertEqual(result.previous_file.name, "telepito.pyz.previous")
+        self.assertEqual(result.previous_file.name, "installer.pyz.previous")
         if sys.platform != "win32":
             self.assertEqual(stat.S_IMODE(self.pyz.stat().st_mode), 0o750)
         self.assertEqual(sorted(p.name for p in self.install_dir.iterdir()),
-                         ["telepito.pyz", "telepito.pyz.previous"])  # fmt: skip
+                         ["installer.pyz", "installer.pyz.previous"])  # fmt: skip
 
     def test_the_new_file_really_runs(self) -> None:
         release = self.publish("9.0.0")
         apply_update(self.github, release, self.pyz, self.log)  # type: ignore[arg-type]
         out = run_python(str(self.pyz), "--version")
-        self.assertEqual(out.stdout.strip(), "telepito 9.0.0")
+        self.assertEqual(out.stdout.strip(), "installer 9.0.0")
 
     def test_a_tampered_download_changes_nothing(self) -> None:
         release = self.publish("9.0.0", tamper=True)
@@ -136,7 +136,7 @@ class ApplyUpdateTests(SelfUpdateTestCase):
             apply_update(self.github, release, self.pyz, self.log)  # type: ignore[arg-type]
         self.assertIn("SHA-256", str(ctx.exception))
         self.assertEqual(self.pyz.read_bytes(), b"OLD-INSTALLER")
-        self.assertEqual([p.name for p in self.install_dir.iterdir()], ["telepito.pyz"])
+        self.assertEqual([p.name for p in self.install_dir.iterdir()], ["installer.pyz"])
 
     def test_missing_checksum_entry(self) -> None:
         release = self.publish("9.0.0", omit_sums_entry=True)
@@ -157,7 +157,7 @@ class ApplyUpdateTests(SelfUpdateTestCase):
         self.assertEqual(self.pyz.read_bytes(), b"OLD-INSTALLER")
 
     def test_a_build_that_reports_another_version_is_refused(self) -> None:
-        wrong = fake_installer(self.dir, "9.0.0", shown="telepito 1.2.3")
+        wrong = fake_installer(self.dir, "9.0.0", shown="installer 1.2.3")
         release = self.publish("9.0.0", pyz=wrong)
         with self.assertRaises(SelfUpdateError) as ctx:
             apply_update(self.github, release, self.pyz, self.log)  # type: ignore[arg-type]
@@ -179,7 +179,7 @@ class ApplyUpdateTests(SelfUpdateTestCase):
 
     def test_an_unwritable_directory_is_reported(self) -> None:
         release = self.publish("9.0.0")
-        missing = self.dir / "gone" / "telepito.pyz"
+        missing = self.dir / "gone" / "installer.pyz"
         with self.assertRaises(SelfUpdateError):
             apply_update(self.github, release, missing, self.log)  # type: ignore[arg-type]
 
@@ -193,9 +193,9 @@ class BuildTests(unittest.TestCase):
     def test_the_built_archive_runs_and_keeps_exit_codes(self) -> None:
         builder = load_builder()
         with tempfile.TemporaryDirectory() as tmp:
-            out = builder.build(Path(tmp) / "dist" / "telepito.pyz")
+            out = builder.build(Path(tmp) / "dist" / "installer.pyz")
             shown = run_python(str(out), "--version")
-            self.assertEqual(shown.stdout.strip(), f"telepito {__version__}")
+            self.assertEqual(shown.stdout.strip(), f"installer {__version__}")
             # argparse rejects a missing argument with exit code 2: it must reach the shell
             bad = run_python(str(out), "plan")
             self.assertEqual(bad.returncode, 2)
@@ -210,7 +210,7 @@ class BuildTests(unittest.TestCase):
         builder = load_builder()
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "any" / "place"
-            out = builder.build(home / "telepito.pyz")
+            out = builder.build(home / "installer.pyz")
             result = run_python(str(out), "status")
             is_root = hasattr(os, "geteuid") and os.geteuid() == 0
             self.assertEqual(result.returncode, 3 if is_root else 0, result.stderr)
@@ -222,7 +222,7 @@ class BuildTests(unittest.TestCase):
 
         builder = load_builder()
         with tempfile.TemporaryDirectory() as tmp:
-            out = builder.build(Path(tmp) / "telepito.pyz")
+            out = builder.build(Path(tmp) / "installer.pyz")
             with zipfile.ZipFile(out) as archive:
                 names = archive.namelist()
             self.assertIn("__main__.py", names)
@@ -252,14 +252,14 @@ class SelfUpdateFlowTests(AppTestCase):
         super().setUp()
         self.install_dir = self.root / "bin"
         self.install_dir.mkdir()
-        self.pyz = self.install_dir / "telepito.pyz"
+        self.pyz = self.install_dir / "installer.pyz"
         self.pyz.write_bytes(b"OLD-INSTALLER")
         self.ctx.pyz_path = self.pyz
 
     def publish_self(self, version: str) -> None:
         data = fake_installer(self.root, version)
-        sums = f"{hashlib.sha256(data).hexdigest()}  telepito.pyz\n".encode()
-        self.github.add_raw(f"v{version}", {"telepito.pyz": data, "SHA256SUMS": sums})
+        sums = f"{hashlib.sha256(data).hexdigest()}  installer.pyz\n".encode()
+        self.github.add_raw(f"v{version}", {"installer.pyz": data, "SHA256SUMS": sums})
 
     def test_up_to_date(self) -> None:
         selfupdate_screen(self.ctx)
@@ -289,12 +289,12 @@ class SelfUpdateFlowTests(AppTestCase):
     def test_a_development_checkout_cannot_be_updated(self) -> None:
         self.ctx.pyz_path = None
         selfupdate_screen(self.ctx)
-        self.assertIn("not running from telepito.pyz", self.messages())
+        self.assertIn("not running from installer.pyz", self.messages())
 
     def test_failures_are_shown_through_the_menu(self) -> None:
         data = fake_installer(self.root, "9.0.0")
-        sums = f"{hashlib.sha256(data).hexdigest()}  telepito.pyz\n".encode()
-        self.github.add_raw("v9.0.0", {"telepito.pyz": data + b"X", "SHA256SUMS": sums})
+        sums = f"{hashlib.sha256(data).hexdigest()}  installer.pyz\n".encode()
+        self.github.add_raw("v9.0.0", {"installer.pyz": data + b"X", "SHA256SUMS": sums})
         self.ui.push("selfupdate", True, "quit")
         run_menu(self.ctx)
         self.assertIn("SHA-256", self.messages())
@@ -304,7 +304,7 @@ class SelfUpdateFlowTests(AppTestCase):
         self.ui.push("quit")
         run_menu(self.ctx)
         menu = next(c for c in self.ui.calls if c.kind == "menu")
-        self.assertIn(f"telepito {__version__}", menu.text)
+        self.assertIn(f"installer {__version__}", menu.text)
 
 
 if __name__ == "__main__":
